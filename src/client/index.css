@@ -5,13 +5,133 @@
 /* Estilos base para mobile-first */
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Clases de utilidad personalizadas */
-.mobile-safe-area {
-  padding-bottom: env(safe-area-inset-bottom);
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
 }
 
+/* Componentes personalizados */
+.afip-card {
+  @apply bg-white rounded-lg shadow-md p-6 mb-6;
+}
+
+.afip-button {
+  @apply px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors;
+}
+
+.afip-button-secondary {
+  @apply px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors;
+}
+
+.afip-input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500;
+}
+
+.afip-alert {
+  @apply border-l-4 border-blue-500 pl-4 py-2;
+}
+
+.afip-alert-high {
+  @apply border-red-500;
+}
+
+.afip-alert-medium {
+  @apply border-yellow-500;
+}
+
+.afip-alert-low {
+  @apply border-blue-500;
+}
+
+/* Animaciones */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Responsive utilities */
+@media (max-width: 640px) {
+  .mobile-stack {
+    @apply flex-col space-y-2;
+  }
+
+  .mobile-full {
+    @apply w-full;
+  }
+}
+
+/* Loading spinner */
+.spinner {
+  @apply animate-spin inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full;
+}
+
+/* Status indicators */
+.status-indicator {
+  @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium;
+}
+
+.status-connected {
+  @apply bg-green-100 text-green-800;
+}
+
+.status-disconnected {
+  @apply bg-red-100 text-red-800;
+}
+
+.status-error {
+  @apply bg-red-100 text-red-800;
+}
+
+/* Compliance score */
+.compliance-score {
+  @apply text-center p-6 rounded-lg;
+}
+
+.compliance-excellent {
+  @apply bg-green-50 text-green-800;
+}
+
+.compliance-good {
+  @apply bg-yellow-50 text-yellow-800;
+}
+
+.compliance-poor {
+  @apply bg-red-50 text-red-800;
+}
+
+/* Scrollbar personalizado */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}

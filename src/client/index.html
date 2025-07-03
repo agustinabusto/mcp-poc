@@ -1,13 +1,69 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AFIP Monitor MCP</title>
+    <title>AFIP Monitor MCP - POC</title>
+    <meta name="description"
+        content="Monitor automático AFIP con alertas proactivas y compliance checker desarrollado usando Model Context Protocol" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#0066cc" />
+
+    <!-- Mobile optimization -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="AFIP Monitor" />
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="http://localhost:8080" />
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="AFIP Monitor MCP - POC" />
+    <meta property="og:description" content="Monitor automático AFIP con alertas proactivas y compliance checker" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="http://localhost:3000" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AFIP Monitor MCP - POC" />
+    <meta name="twitter:description" content="Desarrollado por Snarx.io usando Model Context Protocol" />
+
+    <!-- CSS Variables for theming -->
+    <style>
+        :root {
+            --afip-blue: #0066cc;
+            --afip-green: #28a745;
+            --afip-red: #dc3545;
+            --afip-yellow: #ffc107;
+        }
+    </style>
 </head>
+
 <body>
     <div id="root"></div>
     <script type="module" src="/main.jsx"></script>
-</body>
-</html>
 
+    <!-- Service Worker for PWA -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('SW registered: ', registration);
+                    })
+                    .catch(registrationError => {
+                        console.log('SW registration failed: ', registrationError);
+                    });
+            });
+        }
+    </script>
+</body>
+
+</html>
