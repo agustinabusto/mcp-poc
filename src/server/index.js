@@ -8,6 +8,8 @@ import { dirname, join } from 'path';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import { GroqClient } from './services/groq-client.js';
+import groqChatRoutes from './routes/groq-chat.js';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -38,6 +40,28 @@ const config = {
     },
     afipMockMode: process.env.AFIP_MOCK_MODE === 'true'
 };
+
+async function initializeGroqService(config) {
+    try {
+        // Inicializar Groq Client
+        const groqClient = new GroqClient({
+            groqApiKey: process.env.GROQ_API_KEY,
+            groqModel: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
+            groqMaxTokens: process.env.GROQ_MAX_TOKENS,
+            groqTemperature: process.env.GROQ_TEMPERATURE,
+            groqTimeout: process.env.GROQ_TIMEOUT
+        }, console.log);
+
+        await groqClient.initialize();
+        console.info('✅ Groq Client inicializado', { model: groqClient.model });
+
+        return groqClient;
+    } catch (error) {
+        console.error('❌ Error inicializando Groq:', error);
+        // No fallar si Groq no está disponible
+        return null;
+    }
+}
 
 // Configuración de notificaciones
 const notificationConfig = {
@@ -229,9 +253,26 @@ function generateRecommendations(taxpayerData) {
     return recommendations;
 }
 
+// function setupGroqRoutes(app, groqClient, afipClient, logger) {
+//     // Agregar servicios a app.locals para acceso en las rutas
+//     app.locals.groqClient = groqClient;
+//     app.locals.afipClient = afipClient;
+//     app.locals.logger = logger;
+
+//     // Agregar rutas Groq
+//     app.use('/api/groq', groqChatRoutes);
+
+//     logger.info('✅ Rutas Groq configuradas');
+// }
+
+const groqClient = await initializeGroqService(config);
+
 // ==============================================
 // RUTAS BÁSICAS
 // ==============================================
+
+app.locals.groqClient = groqClient;
+app.use('/api/groq', groqChatRoutes);
 
 app.get('/', (req, res) => {
     res.json({
@@ -255,13 +296,33 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
+    // Obtener el groqClient de app.locals (si existe)
+    const { groqClient } = req.app.locals || {};
+
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         environment: process.env.NODE_ENV || 'development',
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
         emailNotifications: notificationConfig.email.enabled,
-        version: '1.0.0'
+        version: '1.0.0',
+        // AGREGAR: Estado de Groq
+        services: {
+            groq: groqClient ? {
+                healthy: groqClient.isInitialized,
+                model: groqClient.model,
+                enabled: true,
+                metrics: {
+                    requestCount: groqClient.getMetrics().requestCount,
+                    successRate: groqClient.getMetrics().successRate,
+                    totalTokensUsed: groqClient.getMetrics().totalTokensUsed
+                }
+            } : {
+                healthy: false,
+                enabled: false,
+                reason: 'GROQ_API_KEY not configured'
+            }
+        }
     });
 });
 
@@ -721,6 +782,21 @@ server.listen(config.port, config.host, () => {
     console.log(`🎯 Modo AFIP: ${config.afipMockMode ? '🎭 MOCK' : '🌐 REAL'}`);
     console.log(`📧 Email: ${notificationConfig.email.enabled ? '✅ HABILITADO' : '❌ DESHABILITADO'}`);
 
+    // AGREGAR: Estado de Groq AI
+    const { groqClient } = app.locals || {};
+    if (groqClient && groqClient.isInitialized) {
+        console.log(`🤖 Groq AI: ✅ CONECTADO (${groqClient.model})`);
+        console.log(`⚡ Velocidad: ~280 tokens/segundo - Costo: $0.59-0.79/M tokens`);
+        console.log(`🎨 Chat UI: http://${config.host}:${config.port}/#/groq_chat`);
+    } else if (process.env.GROQ_API_KEY) {
+        console.log(`🤖 Groq AI: ⚠️ CONFIGURADO PERO NO CONECTADO`);
+        console.log(`💡 Verifica tu GROQ_API_KEY en .env`);
+    } else {
+        console.log(`🤖 Groq AI: ❌ NO CONFIGURADO`);
+        console.log(`💡 Para habilitar IA: agrega GROQ_API_KEY a .env`);
+        console.log(`🔗 Obtener gratis en: https://console.groq.com/`);
+    }
+
     // Mensaje informativo
     if (config.afipMockMode) {
         console.log('💡 Para usar AFIP Real, cambiar AFIP_MOCK_MODE=false en .env');
@@ -731,6 +807,17 @@ server.listen(config.port, config.host, () => {
     if (notificationConfig.email.enabled) {
         console.log(`📬 Proveedor de email: ${notificationConfig.email.provider}`);
     }
+
+    // AGREGAR: Resumen de endpoints disponibles
+    console.log('\n📋 Endpoints disponibles:');
+    console.log(`   • Dashboard: http://${config.host}:${config.port}/`);
+    console.log(`   • Health Check: http://${config.host}:${config.port}/health`);
+    console.log(`   • MCP Tools: http://${config.host}:${config.port}/api/mcp/tools`);
+    if (groqClient && groqClient.isInitialized) {
+        console.log(`   • Chat IA: http://${config.host}:${config.port}/api/groq/chat`);
+        console.log(`   • Estado IA: http://${config.host}:${config.port}/api/groq/status`);
+    }
+    console.log('');
 });
 
 export { app, server };
