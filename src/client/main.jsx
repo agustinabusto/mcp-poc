@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { AfipMonitorPOC } from './components/AfipMonitorPOC.jsx';
+// import { AfipMonitorPOC } from './components/AfipMonitorPOC.jsx';
+import AfipMonitorPOC from './components/AfipMonitorPOC.jsx'
 import './index.css';
 
 // Configuración de la aplicación

@@ -1,489 +1,435 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Dashboard } from './Dashboard.jsx';
-import { AlertsView } from './AlertsView.jsx';
-import { ComplianceView } from './ComplianceView.jsx';
-import { SettingsView } from './SettingsView.jsx';
-import GroqChatComponent from './GroqChatComponent.jsx';
-import { Header } from './common/Header.jsx';
-import { useAlerts } from '../hooks/useAlerts.js';
-import { useCompliance } from '../hooks/useCompliance.js';
-import { useMonitoring } from '../hooks/useMonitoring.js';
-import { MCPClient } from '../services/mcp-client.js';
+// src/client/components/AfipMonitorPOC.jsx - Versión corregida
+
+import React, { useState, useEffect } from "react";
+import { Activity, AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import ComplianceDetails from "./ComplianceDetails.jsx";
+import SystemMetrics from "./SystemMetrics.jsx";
+import AlertsPanel from "./AlertsPanel.jsx";
+import TaxpayerInfo from "./TaxpayerInfo.jsx";
+import GroqChatComponent from "./GroqChatComponent.jsx";
+import { Header } from "./common/Header.jsx";
+import { useAlerts } from "../hooks/useAlerts.js";
+import { useCompliance } from "../hooks/useCompliance.js";
+import { useMonitoring } from "../hooks/useMonitoring.js";
+import { getMCPClient } from "../services/mcp-client.js";
 
 const VIEWS = {
-  DASHBOARD: 'dashboard',
-  ALERTS: 'alerts',
-  COMPLIANCE: 'compliance',
-  GROQ_CHAT: 'groq_chat', // Nueva vista
-  SETTINGS: 'settings'
+  DASHBOARD: "dashboard",
+  TAXPAYER: "taxpayer",
+  COMPLIANCE: "compliance",
+  ALERTS: "alerts",
+  METRICS: "metrics",
+  GROQ_CHAT: "groq_chat",
 };
 
-const VIEW_TITLES = {
-  [VIEWS.DASHBOARD]: 'Dashboard',
-  [VIEWS.ALERTS]: 'Alertas',
-  [VIEWS.COMPLIANCE]: 'Compliance',
-  [VIEWS.GROQ_CHAT]: 'IA Consultant',
-  [VIEWS.SETTINGS]: 'Configuración'
-};
-
-const VIEW_ICONS = {
-  [VIEWS.DASHBOARD]: '📊',
-  [VIEWS.ALERTS]: '🚨',
-  [VIEWS.COMPLIANCE]: '✅',
-  [VIEWS.GROQ_CHAT]: '🤖',
-  [VIEWS.SETTINGS]: '⚙️'
-};
-
-export const AfipMonitorPOC = ({ config }) => {
-  // Estado principal de la aplicación
+const AfipMonitorPOC = () => {
+  // Estados principales
   const [currentView, setCurrentView] = useState(VIEWS.DASHBOARD);
-  const [isLoading, setIsLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState('disconnected');
-  const [mcpClient, setMcpClient] = useState(null);
-  const [error, setError] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [mcpToolSuggestions, setMcpToolSuggestions] = useState([]);
+  const [taxpayerData, setTaxpayerData] = useState(null);
+  const [complianceData, setComplianceData] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [initError, setInitError] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  // Estados de configuración
-  const [settings, setSettings] = useState({
-    autoRefresh: true,
-    refreshInterval: config.refreshInterval,
-    enableNotifications: config.enableNotifications,
-    darkMode: false,
-    compactView: false,
-    selectedCuit: localStorage.getItem('selectedCuit') || '',
-    alertFilters: {
-      severity: ['high', 'medium', 'low'],
-      status: ['active'],
-      dateRange: 7
-    },
-    groqEnabled: true, // Nueva configuración
-    groqModel: 'llama-3.1-70b-versatile',
-    autoMcpSuggestions: true
-  });
-
-  // Hooks personalizados existentes
+  // Hooks personalizados
   const {
     alerts,
-    alertStats,
-    isLoading: isLoadingAlerts,
-    error: alertsError,
-    refreshAlerts,
-    acknowledgeAlert,
-    resolveAlert
-  } = useAlerts(config.apiBaseUrl, settings.alertFilters);
+    addAlert,
+    createAfipAlert,
+    clearAll: clearAllAlerts,
+    loading: alertsLoading
+  } = useAlerts();
 
   const {
-    complianceData,
-    complianceHistory,
-    isLoading: isLoadingCompliance,
-    error: complianceError,
-    refreshCompliance,
-    runComplianceCheck
-  } = useCompliance(config.apiBaseUrl, settings.selectedCuit);
+    complianceData: complianceHookData,
+    checkCompliance,
+    loading: complianceLoading
+  } = useCompliance();
 
   const {
     monitoringData,
-    systemHealth,
-    isLoading: isLoadingMonitoring,
-    error: monitoringError,
-    refreshMonitoring
-  } = useMonitoring(config.apiBaseUrl);
+    isConnected,
+    getMetrics,
+    getSystemStatus,
+    refreshAlerts, // ✅ Ahora está disponible
+    clearErrors,
+    loading: monitoringLoading
+  } = useMonitoring();
 
-  // Inicialización de servicios
-  useEffect(() => {
-    const initializeApp = async () => {
+  // Cliente MCP
+  const [mcpClient, setMcpClient] = useState(null);
+
+  // Inicialización de la aplicación
+  const initializeApp = async () => {
+    console.log("🚀 Iniciando aplicación AFIP Monitor...");
+    setLoading(true);
+    setInitError(null);
+
+    try {
+      // Inicializar cliente MCP
+      const client = getMCPClient();
+      await client.connect();
+      setMcpClient(client);
+      console.log("✅ Cliente MCP inicializado");
+
+      // Obtener métricas iniciales del sistema
       try {
-        setIsLoading(true);
-
-        // Inicializar MCP Client
-        const client = new MCPClient(config);
-        await client.connect();
-        setMcpClient(client);
-        setConnectionStatus('connected');
-
-        // Cargar datos iniciales
-        await Promise.all([
-          refreshAlerts(),
-          refreshCompliance(),
-          refreshMonitoring()
-        ]);
-
-        setError(null);
-      } catch (error) {
-        console.error('Error inicializando aplicación:', error);
-        setError(error.message);
-        setConnectionStatus('error');
-      } finally {
-        setIsLoading(false);
+        await getMetrics();
+        console.log("✅ Métricas iniciales obtenidas");
+      } catch (metricsError) {
+        console.warn("⚠️ Error obteniendo métricas:", metricsError.message);
       }
-    };
 
-    initializeApp();
-  }, [config, refreshAlerts, refreshCompliance, refreshMonitoring]);
-
-  // Manejar sugerencias de herramientas MCP desde Groq
-  const handleMCPToolSuggestion = useCallback((suggestions) => {
-    if (!settings.autoMcpSuggestions) return;
-
-    setMcpToolSuggestions(prev => {
-      const newSuggestions = suggestions.filter(s => !prev.includes(s));
-      if (newSuggestions.length > 0) {
-        addNotification(
-          `🤖 IA sugiere usar: ${newSuggestions.join(', ')}`,
-          'info'
-        );
+      // Refrescar alertas si la función está disponible
+      if (refreshAlerts && typeof refreshAlerts === 'function') {
+        try {
+          await refreshAlerts();
+          console.log("✅ Alertas iniciales cargadas");
+        } catch (alertsError) {
+          console.warn("⚠️ Error cargando alertas:", alertsError.message);
+        }
+      } else {
+        console.warn("⚠️ refreshAlerts no está disponible aún");
       }
-      return [...new Set([...prev, ...suggestions])];
-    });
-  }, [settings.autoMcpSuggestions]);
 
-  // Función para agregar notificaciones
-  const addNotification = useCallback((message, type = 'info') => {
-    const notification = {
-      id: Date.now(),
-      message,
-      type,
-      timestamp: new Date(),
-      autoHide: type !== 'error'
-    };
-
-    setNotifications(prev => [...prev, notification]);
-
-    if (notification.autoHide) {
-      setTimeout(() => {
-        removeNotification(notification.id);
-      }, 5000);
-    }
-
-    // Notification API si está habilitada
-    if (settings.enableNotifications && 'Notification' in window) {
-      if (Notification.permission === 'granted') {
-        new Notification('AFIP Monitor', {
-          body: message,
-          icon: '/icons/icon-192.png',
-          tag: 'afip-monitor'
+      // Crear alerta de bienvenida
+      if (addAlert) {
+        addAlert({
+          type: 'success',
+          title: 'Sistema Iniciado',
+          message: 'AFIP Monitor MCP iniciado correctamente',
+          category: 'system',
+          priority: 'low'
         });
       }
-    }
-  }, [settings.enableNotifications]);
 
-  const removeNotification = useCallback((id) => {
-    setNotifications(prev => prev.filter(n => n.id !== id));
-  }, []);
+      setIsInitialized(true);
+      console.log("🎉 Aplicación inicializada exitosamente");
 
-  // Funciones de actualización de datos
-  const refreshData = useCallback(async () => {
-    try {
-      await Promise.all([
-        refreshAlerts(),
-        refreshCompliance(),
-        refreshMonitoring()
-      ]);
     } catch (error) {
-      console.error('Error refreshing data:', error);
-      addNotification('Error actualizando datos', 'error');
-    }
-  }, [refreshAlerts, refreshCompliance, refreshMonitoring, addNotification]);
+      console.error("❌ Error inicializando aplicación:", error);
+      setInitError(error);
 
-  // Manejo de cambios de configuración
-  const updateSettings = useCallback((newSettings) => {
-    setSettings(prev => {
-      const updated = { ...prev, ...newSettings };
-
-      // Guardar configuración en localStorage
-      localStorage.setItem('afipMonitorSettings', JSON.stringify(updated));
-
-      // Guardar CUIT seleccionado
-      if (updated.selectedCuit !== prev.selectedCuit) {
-        localStorage.setItem('selectedCuit', updated.selectedCuit);
+      // Crear alerta de error
+      if (addAlert) {
+        addAlert({
+          type: 'error',
+          title: 'Error de Inicialización',
+          message: `Error: ${error.message}`,
+          category: 'system',
+          priority: 'high'
+        });
       }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-      return updated;
-    });
-  }, []);
+  // Función para consultar contribuyente
+  const handleTaxpayerQuery = async (cuit) => {
+    if (!mcpClient) {
+      console.error("Cliente MCP no disponible");
+      return;
+    }
 
-  // Cargar configuración desde localStorage
+    setLoading(true);
+    try {
+      console.log(`🔍 Consultando contribuyente: ${cuit}`);
+
+      const result = await mcpClient.callTool('afip_get_taxpayer_info', { cuit });
+
+      if (result && result.content && result.content[0]) {
+        const data = JSON.parse(result.content[0].text);
+        setTaxpayerData(data.data || data);
+
+        // Crear alerta de consulta exitosa
+        createAfipAlert('system_update', {
+          message: `Información de ${cuit} obtenida exitosamente`
+        });
+
+        setCurrentView(VIEWS.TAXPAYER);
+      }
+    } catch (error) {
+      console.error("Error consultando contribuyente:", error);
+      createAfipAlert('compliance_issue', {
+        description: `Error consultando CUIT ${cuit}: ${error.message}`
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Función para verificar compliance
+  const handleComplianceCheck = async (cuit, period) => {
+    if (!mcpClient) {
+      console.error("Cliente MCP no disponible");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      console.log(`🔍 Verificando compliance: ${cuit}`);
+
+      const result = await mcpClient.callTool('afip_compliance_check', {
+        cuit,
+        period: period || new Date().getFullYear().toString(),
+        sendNotification: false
+      });
+
+      if (result && result.content && result.content[0]) {
+        const data = JSON.parse(result.content[0].text);
+        setComplianceData(data.data || data);
+
+        // Crear alerta basada en el score
+        const score = data.data?.score || data.score || 0;
+        if (score < 60) {
+          createAfipAlert('compliance_issue', {
+            description: `Score de compliance bajo (${score}) para ${cuit}`
+          });
+        } else {
+          createAfipAlert('system_update', {
+            message: `Compliance verificado para ${cuit}: ${score} puntos`
+          });
+        }
+
+        setCurrentView(VIEWS.COMPLIANCE);
+      }
+    } catch (error) {
+      console.error("Error verificando compliance:", error);
+      createAfipAlert('compliance_issue', {
+        description: `Error verificando compliance para ${cuit}: ${error.message}`
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Función para manejar actualizaciones de alertas
+  const handleRefreshAlerts = async () => {
+    if (refreshAlerts && typeof refreshAlerts === 'function') {
+      try {
+        setLoading(true);
+        await refreshAlerts();
+        console.log("🔄 Alertas actualizadas");
+      } catch (error) {
+        console.error("Error actualizando alertas:", error);
+        addAlert({
+          type: 'error',
+          title: 'Error actualizando alertas',
+          message: error.message,
+          category: 'system',
+          priority: 'medium'
+        });
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      console.warn("refreshAlerts no está disponible");
+    }
+  };
+
+  // Efecto de inicialización
   useEffect(() => {
-    try {
-      const savedSettings = localStorage.getItem('afipMonitorSettings');
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings);
-        setSettings(prev => ({ ...prev, ...parsed }));
-      }
-    } catch (error) {
-      console.warn('Error cargando configuración:', error);
-    }
+    // Esperar un poco para que los hooks se monten completamente
+    const timer = setTimeout(() => {
+      initializeApp();
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, []);
 
-  // Aplicar tema
+  // Efecto para manejar cambios en el estado de conexión
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', settings.darkMode ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-compact', settings.compactView ? 'true' : 'false');
-  }, [settings.darkMode, settings.compactView]);
-
-  // Funciones de acción
-  const handleAlertAction = useCallback(async (alertId, action, data = {}) => {
-    try {
-      switch (action) {
-        case 'acknowledge':
-          await acknowledgeAlert(alertId);
-          addNotification('Alerta confirmada', 'success');
-          break;
-        case 'resolve':
-          await resolveAlert(alertId, data.reason);
-          addNotification('Alerta resuelta', 'success');
-          break;
-        default:
-          throw new Error(`Acción desconocida: ${action}`);
-      }
-    } catch (error) {
-      console.error('Error en acción de alerta:', error);
-      addNotification(`Error: ${error.message}`, 'error');
+    if (isConnected && !alertsLoading) {
+      console.log("🔌 WebSocket conectado, actualizando datos...");
+      // Opcional: refrescar datos cuando se reconecte
     }
-  }, [acknowledgeAlert, resolveAlert, addNotification]);
+  }, [isConnected, alertsLoading]);
 
-  const handleComplianceCheck = useCallback(async (cuit, options = {}) => {
-    try {
-      if (!cuit) {
-        throw new Error('CUIT es requerido');
-      }
-
-      addNotification('Iniciando verificación de compliance...', 'info');
-      const result = await runComplianceCheck(cuit, options);
-
-      if (result.success) {
-        addNotification(`Compliance verificado - Score: ${result.data.score}%`, 'success');
-      } else {
-        addNotification(`Error en verificación: ${result.error.message}`, 'error');
-      }
-    } catch (error) {
-      console.error('Error en verificación de compliance:', error);
-      addNotification(`Error: ${error.message}`, 'error');
-    }
-  }, [runComplianceCheck, addNotification]);
-
-  // Datos computados
-  const dashboardData = useMemo(() => ({
-    alerts: {
-      active: alerts.filter(a => a.status === 'active').length,
-      high: alerts.filter(a => a.severity === 'high').length,
-      today: alerts.filter(a => {
-        const today = new Date().toDateString();
-        return new Date(a.created_at).toDateString() === today;
-      }).length
-    },
-    compliance: {
-      score: complianceData?.score || 0,
-      status: complianceData?.overallStatus || 'unknown',
-      lastCheck: complianceData?.timestamp || null
-    },
-    system: {
-      status: systemHealth?.healthy ? 'healthy' : 'degraded',
-      uptime: systemHealth?.uptime || 0,
-      services: systemHealth?.services || {}
-    },
-    groq: {
-      enabled: settings.groqEnabled,
-      suggestions: mcpToolSuggestions.length
-    }
-  }), [alerts, complianceData, systemHealth, settings.groqEnabled, mcpToolSuggestions]);
-
-  // Renderizado de loading
-  if (isLoading) {
+  // Estado de carga inicial
+  if (loading && !isInitialized) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
-            Iniciando AFIP Monitor MCP
-          </h2>
-          <p className="text-gray-600 dark:text-gray-400">
-            Conectando servicios y cargando datos...
-          </p>
+          <h2 className="text-xl font-semibold text-gray-700">Inicializando AFIP Monitor...</h2>
+          <p className="text-gray-500 mt-2">Conectando servicios MCP</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Notificaciones */}
-      {notifications.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
-          {notifications.slice(-3).map((notification) => (
-            <div
-              key={notification.id}
-              className={`px-4 py-3 rounded-lg shadow-lg border max-w-sm ${notification.type === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : notification.type === 'success'
-                    ? 'bg-green-50 border-green-200 text-green-800'
-                    : 'bg-blue-50 border-blue-200 text-blue-800'
-                }`}
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm">{notification.message}</p>
-                <button
-                  onClick={() => removeNotification(notification.id)}
-                  className="ml-2 text-gray-400 hover:text-gray-600"
-                >
-                  ×
-                </button>
+  // Estado de error de inicialización
+  if (initError && !isInitialized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-100 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-red-700 mb-2">Error de Inicialización</h2>
+          <p className="text-red-600 mb-4">{initError.message}</p>
+          <button
+            onClick={initializeApp}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+          >
+            Reintentar
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Renderizar contenido principal
+  const renderMainContent = () => {
+    switch (currentView) {
+      case VIEWS.TAXPAYER:
+        return (
+          <TaxpayerInfo
+            data={taxpayerData}
+            onComplianceCheck={handleComplianceCheck}
+            loading={loading}
+          />
+        );
+
+      case VIEWS.COMPLIANCE:
+        return (
+          <ComplianceDetails
+            data={complianceData}
+            loading={complianceLoading}
+          />
+        );
+
+      case VIEWS.ALERTS:
+        return (
+          <AlertsPanel
+            alerts={alerts}
+            onRefresh={handleRefreshAlerts}
+            onClear={clearAllAlerts}
+            loading={alertsLoading}
+          />
+        );
+
+      case VIEWS.METRICS:
+        return (
+          <SystemMetrics
+            data={monitoringData}
+            isConnected={isConnected}
+            onRefresh={getMetrics}
+            loading={monitoringLoading}
+          />
+        );
+
+      case VIEWS.GROQ_CHAT:
+        return <GroqChatComponent />;
+
+      default:
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+            {/* Panel de estado del sistema */}
+            <div className="lg:col-span-2 xl:col-span-2">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Estado del Sistema</h3>
+                  <div className={`flex items-center gap-2 ${isConnected ? 'text-green-600' : 'text-red-600'}`}>
+                    <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-600' : 'bg-red-600'}`}></div>
+                    <span className="text-sm font-medium">
+                      {isConnected ? 'Conectado' : 'Desconectado'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Métricas rápidas */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-blue-600">
+                      {monitoringData.alerts?.length || 0}
+                    </div>
+                    <div className="text-sm text-gray-500">Alertas Activas</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-green-600">
+                      {monitoringData.status === 'connected' ? 'OK' : 'ERR'}
+                    </div>
+                    <div className="text-sm text-gray-500">Estado MCP</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-purple-600">
+                      {monitoringData.metrics?.afip_mode || 'N/A'}
+                    </div>
+                    <div className="text-sm text-gray-500">Modo AFIP</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {monitoringData.metrics?.groq_enabled ? 'ON' : 'OFF'}
+                    </div>
+                    <div className="text-sm text-gray-500">IA Groq</div>
+                  </div>
+                </div>
               </div>
             </div>
-          ))}
-        </div>
-      )}
 
-      {/* Header */}
+            {/* Panel de alertas recientes */}
+            <div className="xl:col-span-1">
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Alertas Recientes</h3>
+                  <button
+                    onClick={handleRefreshAlerts}
+                    disabled={loading}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium disabled:opacity-50"
+                  >
+                    {loading ? 'Actualizando...' : 'Actualizar'}
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {alerts.slice(0, 5).map((alert) => (
+                    <div key={alert.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+                      <div className={`w-2 h-2 rounded-full mt-2 ${alert.type === 'error' ? 'bg-red-500' :
+                          alert.type === 'warning' ? 'bg-yellow-500' :
+                            alert.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
+                        }`}></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {alert.title}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">
+                          {alert.message}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {alerts.length === 0 && (
+                    <div className="text-center py-4 text-gray-500">
+                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                      <p className="text-sm">No hay alertas activas</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <Header
         currentView={currentView}
         onViewChange={setCurrentView}
-        connectionStatus={connectionStatus}
-        settings={settings}
-        onSettingsChange={updateSettings}
-        dashboardData={dashboardData}
+        onTaxpayerQuery={handleTaxpayerQuery}
         views={VIEWS}
-        viewTitles={VIEW_TITLES}
-        viewIcons={VIEW_ICONS}
+        loading={loading}
+        isConnected={isConnected}
+        alertCount={alerts.length}
       />
 
-      {/* Main Content */}
-      <main className="pb-16 md:pb-0">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          {/* Error State */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <h3 className="text-red-800 dark:text-red-200 font-medium">Error de Conexión</h3>
-              <p className="text-red-600 dark:text-red-300 text-sm mt-1">{error}</p>
-              <button
-                onClick={refreshData}
-                className="mt-2 px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700"
-              >
-                Reintentar
-              </button>
-            </div>
-          )}
-
-          {/* MCP Tool Suggestions */}
-          {mcpToolSuggestions.length > 0 && (
-            <div className="mb-6 p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
-              <h3 className="text-purple-800 dark:text-purple-200 font-medium flex items-center gap-2">
-                🤖 Sugerencias de IA
-              </h3>
-              <p className="text-purple-600 dark:text-purple-300 text-sm mt-1">
-                La IA sugiere usar estas herramientas MCP: {mcpToolSuggestions.join(', ')}
-              </p>
-              <button
-                onClick={() => setMcpToolSuggestions([])}
-                className="mt-2 px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700"
-              >
-                Entendido
-              </button>
-            </div>
-          )}
-
-          {/* Título de vista actual */}
-          <div className="mb-6">
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-              <span className="text-2xl">{VIEW_ICONS[currentView]}</span>
-              {VIEW_TITLES[currentView]}
-            </h1>
-          </div>
-
-          {/* Renderizado de vistas */}
-          {currentView === VIEWS.DASHBOARD && (
-            <Dashboard
-              data={dashboardData}
-              alerts={alerts.slice(0, 5)}
-              complianceData={complianceData}
-              systemHealth={systemHealth}
-              isLoading={isLoadingAlerts || isLoadingCompliance || isLoadingMonitoring}
-              onRefresh={refreshData}
-              onAlertAction={handleAlertAction}
-              onComplianceCheck={handleComplianceCheck}
-              settings={settings}
-            />
-          )}
-
-          {currentView === VIEWS.ALERTS && (
-            <AlertsView
-              alerts={alerts}
-              alertStats={alertStats}
-              isLoading={isLoadingAlerts}
-              onRefresh={refreshAlerts}
-              onAlertAction={handleAlertAction}
-              filters={settings.alertFilters}
-              onFiltersChange={(filters) => updateSettings({ alertFilters: filters })}
-              settings={settings}
-            />
-          )}
-
-          {currentView === VIEWS.COMPLIANCE && (
-            <ComplianceView
-              complianceData={complianceData}
-              complianceHistory={complianceHistory}
-              isLoading={isLoadingCompliance}
-              onRefresh={refreshCompliance}
-              onRunCheck={handleComplianceCheck}
-              selectedCuit={settings.selectedCuit}
-              onCuitChange={(cuit) => updateSettings({ selectedCuit: cuit })}
-              settings={settings}
-            />
-          )}
-
-          {/* Nueva vista de Groq Chat */}
-          {currentView === VIEWS.GROQ_CHAT && (
-            <GroqChatComponent
-              config={config}
-              selectedCuit={settings.selectedCuit}
-              onMCPToolSuggestion={handleMCPToolSuggestion}
-            />
-          )}
-
-          {currentView === VIEWS.SETTINGS && (
-            <SettingsView
-              settings={settings}
-              onSettingsChange={updateSettings}
-              connectionStatus={connectionStatus}
-              systemHealth={systemHealth}
-              onTestConnection={() => mcpClient?.testConnection()}
-              onClearCache={() => {
-                localStorage.removeItem('afipMonitorSettings');
-                localStorage.removeItem('selectedCuit');
-                addNotification('Cache limpiado', 'success');
-              }}
-              onExportData={() => {
-                addNotification('Función en desarrollo', 'info');
-              }}
-            />
-          )}
-        </div>
+      <main className="container mx-auto px-4 py-8">
+        {renderMainContent()}
       </main>
-
-      {/* Status bar inferior (solo en mobile) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-2">
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-            <span className="text-gray-600 dark:text-gray-400">
-              {connectionStatus === 'connected' ? 'Conectado' : 'Desconectado'}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {settings.groqEnabled && (
-              <span className="text-purple-600 dark:text-purple-400 font-medium">
-                🤖 Groq AI
-              </span>
-            )}
-            <span className="text-gray-500">
-              {alerts.filter(a => a.status === 'active').length} alertas
-            </span>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
+
+export default AfipMonitorPOC;

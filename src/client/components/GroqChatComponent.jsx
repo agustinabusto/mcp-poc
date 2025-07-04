@@ -9,6 +9,14 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
     const [complianceData, setComplianceData] = useState(null);
     const messagesEndRef = useRef(null);
 
+    // ✅ Configuración por defecto si no se proporciona config
+    const defaultConfig = {
+        apiBaseUrl: 'http://localhost:8080'
+    };
+
+    // ✅ Usar config proporcionado o valores por defecto
+    const effectiveConfig = config || defaultConfig;
+
     // Mensajes predefinidos específicos para AFIP
     const quickPrompts = [
         "¿Cuál es el estado de compliance del CUIT " + (selectedCuit || "20-12345678-9") + "?",
@@ -31,14 +39,18 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
     // Obtener estado de Groq
     const checkGroqStatus = useCallback(async () => {
         try {
-            const response = await fetch(`${config.apiBaseUrl}/api/groq/status`);
-            const data = await response.json();
-            setGroqStatus(data);
+            const response = await fetch(`${effectiveConfig.apiBaseUrl}/api/groq/status`);
+            if (response.ok) {
+                const data = await response.json();
+                setGroqStatus(data);
+            } else {
+                setGroqStatus({ status: 'error', metrics: {} });
+            }
         } catch (error) {
             console.error('Error obteniendo estado Groq:', error);
             setGroqStatus({ status: 'error', metrics: {} });
         }
-    }, [config.apiBaseUrl]);
+    }, [effectiveConfig.apiBaseUrl]);
 
     // Verificar estado al inicializar
     useEffect(() => {
@@ -52,7 +64,7 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${config.apiBaseUrl}/api/groq/chat`, {
+            const response = await fetch(`${effectiveConfig.apiBaseUrl}/api/groq/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -123,7 +135,7 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
             }
 
             // Notificar sugerencias de herramientas MCP al componente padre
-            if (response.data.mcpSuggestions.length > 0 && onMCPToolSuggestion) {
+            if (response.data.mcpSuggestions && response.data.mcpSuggestions.length > 0 && onMCPToolSuggestion) {
                 onMCPToolSuggestion(response.data.mcpSuggestions);
             }
 
@@ -263,10 +275,10 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
                     >
                         <div
                             className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${message.type === 'user'
-                                    ? 'bg-purple-600 text-white'
-                                    : message.type === 'error'
-                                        ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
-                                        : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
+                                ? 'bg-purple-600 text-white'
+                                : message.type === 'error'
+                                    ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-200 border border-red-200 dark:border-red-800'
+                                    : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700'
                                 }`}
                         >
                             <p className="text-sm whitespace-pre-wrap">{message.content}</p>
@@ -432,8 +444,8 @@ const GroqChatComponent = ({ config, selectedCuit, onMCPToolSuggestion }) => {
                         <div
                             key={tool.name}
                             className={`p-2 rounded text-xs border ${tool.active
-                                    ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
-                                    : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400'
+                                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+                                : 'bg-gray-100 dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400'
                                 }`}
                         >
                             <div className="font-medium">{tool.name}</div>

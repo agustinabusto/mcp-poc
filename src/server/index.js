@@ -8,13 +8,16 @@ import { dirname, join } from 'path';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import axios from 'axios';
-import { GroqClient } from './services/groq-client.js';
-import groqChatRoutes from './routes/groq-chat.js';
 
 // Cargar variables de entorno
 dotenv.config();
 
-// Importar datos mock realistas
+// Importar servicios
+import { GroqClient } from './services/groq-client.js';
+import { AfipClient } from './services/afip-client.js';
+import { NotificationService } from './services/notification-service.js';
+
+// Importar datos mock
 import { getRealisticTaxpayerInfo } from './services/mock-realistic-data.js';
 import {
     getProblematicTaxpayerInfo,
@@ -24,8 +27,8 @@ import {
     getProblematicSummary
 } from './services/compliance-problematic-case.js';
 
-// Importar servicio de notificaciones
-import { NotificationService } from './services/notification-service.js';
+// Importar rutas
+import groqChatRoutes from './routes/groq-chat.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -38,30 +41,20 @@ const config = {
         origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
         credentials: true
     },
-    afipMockMode: process.env.AFIP_MOCK_MODE === 'true'
-};
-
-async function initializeGroqService(config) {
-    try {
-        // Inicializar Groq Client
-        const groqClient = new GroqClient({
-            groqApiKey: process.env.GROQ_API_KEY,
-            groqModel: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
-            groqMaxTokens: process.env.GROQ_MAX_TOKENS,
-            groqTemperature: process.env.GROQ_TEMPERATURE,
-            groqTimeout: process.env.GROQ_TIMEOUT
-        }, console.log);
-
-        await groqClient.initialize();
-        console.info('✅ Groq Client inicializado', { model: groqClient.model });
-
-        return groqClient;
-    } catch (error) {
-        console.error('❌ Error inicializando Groq:', error);
-        // No fallar si Groq no está disponible
-        return null;
+    afipMockMode: process.env.AFIP_MOCK_MODE === 'true' || true, // Default true para POC
+    groq: {
+        apiKey: process.env.GROQ_API_KEY,
+        model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
+        maxTokens: parseInt(process.env.GROQ_MAX_TOKENS) || 1000,
+        temperature: parseFloat(process.env.GROQ_TEMPERATURE) || 0.7,
+        timeout: parseInt(process.env.GROQ_TIMEOUT) || 30000
+    },
+    afip: {
+        mockMode: process.env.AFIP_MOCK_MODE === 'true' || true,
+        timeout: 30000,
+        baseURL: 'https://soa.afip.gob.ar/sr-padron/v2'
     }
-}
+};
 
 // Configuración de notificaciones
 const notificationConfig = {
@@ -79,6 +72,48 @@ const notificationConfig = {
 };
 
 // ==============================================
+// INICIALIZAR SERVICIOS
+// ==============================================
+
+console.log('🚀 Inicializando servicios...');
+
+// Inicializar logger simple
+const logger = {
+    info: (msg, data) => console.log(`ℹ️  [INFO] ${msg}`, data || ''),
+    warn: (msg, data) => console.warn(`⚠️  [WARN] ${msg}`, data || ''),
+    error: (msg, data) => console.error(`❌ [ERROR] ${msg}`, data || ''),
+    debug: (msg, data) => process.env.NODE_ENV === 'development' && console.log(`🐛 [DEBUG] ${msg}`, data || '')
+};
+
+// Inicializar Groq Client
+let groqClient = null;
+if (config.groq.apiKey) {
+    try {
+        groqClient = new GroqClient(config.groq, logger);
+        await groqClient.initialize();
+        logger.info('✅ Groq Client inicializado exitosamente');
+    } catch (error) {
+        logger.error('❌ Error inicializando Groq Client:', error.message);
+        groqClient = null;
+    }
+} else {
+    logger.warn('⚠️ GROQ_API_KEY no configurado - Funcionalidad de IA deshabilitada');
+}
+
+// Inicializar AFIP Client
+const afipClient = new AfipClient(config.afip, logger);
+try {
+    await afipClient.initialize();
+    logger.info('✅ AFIP Client inicializado exitosamente');
+} catch (error) {
+    logger.error('❌ Error inicializando AFIP Client:', error.message);
+}
+
+// Inicializar servicio de notificaciones
+const notificationService = new NotificationService(notificationConfig, logger);
+notificationService.setupDefaultSubscriptions();
+
+// ==============================================
 // CREAR APLICACIÓN EXPRESS
 // ==============================================
 
@@ -86,24 +121,21 @@ const app = express();
 
 // Middleware básico
 app.use(cors(config.cors));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Middleware de logging
 app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    const timestamp = new Date().toISOString();
+    logger.debug(`${timestamp} - ${req.method} ${req.path}`);
     next();
 });
 
-// ==============================================
-// CONFIGURAR SERVICIOS
-// ==============================================
-
-// Crear servicio de notificaciones
-const notificationService = new NotificationService(notificationConfig, console);
-
-// Configurar suscripciones por defecto
-notificationService.setupDefaultSubscriptions();
+// Agregar servicios a app.locals para las rutas
+app.locals.groqClient = groqClient;
+app.locals.afipClient = afipClient;
+app.locals.notificationService = notificationService;
+app.locals.logger = logger;
 
 // ==============================================
 // FUNCIONES AUXILIARES AFIP
@@ -115,7 +147,7 @@ async function getAfipTaxpayerInfo(cuit) {
         const cleanCuit = cuit.replace(/[-\s]/g, '');
         const afipUrl = `https://soa.afip.gob.ar/sr-padron/v2/persona/${cleanCuit}`;
 
-        console.log(`🔍 Consultando AFIP Real: ${afipUrl}`);
+        logger.debug(`🔍 Consultando AFIP Real: ${afipUrl}`);
 
         const response = await axios.get(afipUrl, {
             timeout: 10000,
@@ -131,7 +163,7 @@ async function getAfipTaxpayerInfo(cuit) {
             throw new Error('No se encontraron datos en AFIP');
         }
     } catch (error) {
-        console.error('❌ Error consultando AFIP:', error.message);
+        logger.error('❌ Error consultando AFIP:', error.message);
         throw error;
     }
 }
@@ -178,7 +210,7 @@ function determineIVAStatus(data) {
     return 'NO_INSCRIPTO';
 }
 
-// Datos Mock para fallback (ahora usa datos realistas)
+// Datos Mock para fallback
 function getMockTaxpayerInfo(cuit) {
     // Primero buscar en casos problemáticos
     const problematicData = getProblematicTaxpayerInfo(cuit);
@@ -253,26 +285,9 @@ function generateRecommendations(taxpayerData) {
     return recommendations;
 }
 
-// function setupGroqRoutes(app, groqClient, afipClient, logger) {
-//     // Agregar servicios a app.locals para acceso en las rutas
-//     app.locals.groqClient = groqClient;
-//     app.locals.afipClient = afipClient;
-//     app.locals.logger = logger;
-
-//     // Agregar rutas Groq
-//     app.use('/api/groq', groqChatRoutes);
-
-//     logger.info('✅ Rutas Groq configuradas');
-// }
-
-const groqClient = await initializeGroqService(config);
-
 // ==============================================
 // RUTAS BÁSICAS
 // ==============================================
-
-app.locals.groqClient = groqClient;
-app.use('/api/groq', groqChatRoutes);
 
 app.get('/', (req, res) => {
     res.json({
@@ -280,6 +295,7 @@ app.get('/', (req, res) => {
         version: '1.0.0',
         status: 'running',
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
+        groqEnabled: !!groqClient,
         emailNotifications: notificationConfig.email.enabled,
         timestamp: new Date().toISOString(),
         endpoints: {
@@ -288,6 +304,7 @@ app.get('/', (req, res) => {
             taxpayer: '/api/afip/taxpayer/:cuit',
             alerts: '/api/alerts',
             compliance: '/api/compliance/check',
+            groq: groqClient ? '/api/groq/*' : null,
             notifications: '/api/notifications/*'
         },
         docs: 'https://github.com/snarx-io/afip-monitor-mcp',
@@ -296,8 +313,16 @@ app.get('/', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    // Obtener el groqClient de app.locals (si existe)
-    const { groqClient } = req.app.locals || {};
+    const groqStatus = groqClient ? {
+        healthy: groqClient.isInitialized,
+        model: groqClient.model,
+        enabled: true,
+        metrics: groqClient.getMetrics()
+    } : {
+        healthy: false,
+        enabled: false,
+        reason: 'GROQ_API_KEY not configured'
+    };
 
     res.json({
         status: 'healthy',
@@ -306,21 +331,15 @@ app.get('/health', (req, res) => {
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
         emailNotifications: notificationConfig.email.enabled,
         version: '1.0.0',
-        // AGREGAR: Estado de Groq
         services: {
-            groq: groqClient ? {
-                healthy: groqClient.isInitialized,
-                model: groqClient.model,
-                enabled: true,
-                metrics: {
-                    requestCount: groqClient.getMetrics().requestCount,
-                    successRate: groqClient.getMetrics().successRate,
-                    totalTokensUsed: groqClient.getMetrics().totalTokensUsed
-                }
-            } : {
-                healthy: false,
-                enabled: false,
-                reason: 'GROQ_API_KEY not configured'
+            groq: groqStatus,
+            afip: {
+                healthy: true,
+                mockMode: config.afipMockMode
+            },
+            notifications: {
+                healthy: true,
+                emailEnabled: notificationConfig.email.enabled
             }
         }
     });
@@ -331,12 +350,33 @@ app.get('/api/status', (req, res) => {
         server: 'AFIP Monitor MCP',
         status: 'running',
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
+        groqEnabled: !!groqClient,
         emailNotifications: notificationConfig.email.enabled,
         uptime: process.uptime(),
         memory: process.memoryUsage(),
         timestamp: new Date().toISOString()
     });
 });
+
+// ==============================================
+// RUTAS GROQ + IA
+// ==============================================
+
+// Montar rutas de Groq si está disponible
+if (groqClient) {
+    app.use('/api/groq', groqChatRoutes);
+    logger.info('✅ Rutas Groq configuradas');
+} else {
+    // Ruta fallback si Groq no está disponible
+    app.use('/api/groq/*', (req, res) => {
+        res.status(503).json({
+            success: false,
+            error: 'Servicio de IA no disponible',
+            message: 'Configure GROQ_API_KEY para habilitar funcionalidades de IA',
+            obtainKey: 'https://console.groq.com/'
+        });
+    });
+}
 
 // ==============================================
 // ENDPOINTS DE NOTIFICACIONES
@@ -349,6 +389,7 @@ app.post('/api/notifications/subscribe', (req, res) => {
 
         if (!alertType || !email) {
             return res.status(400).json({
+                success: false,
                 error: 'alertType y email son requeridos'
             });
         }
@@ -367,7 +408,9 @@ app.post('/api/notifications/subscribe', (req, res) => {
         });
 
     } catch (error) {
+        logger.error('Error creando suscripción:', error);
         res.status(500).json({
+            success: false,
             error: 'Error creando suscripción',
             message: error.message
         });
@@ -381,6 +424,7 @@ app.post('/api/notifications/test-email', async (req, res) => {
 
         if (!to) {
             return res.status(400).json({
+                success: false,
                 error: 'Email destinatario es requerido'
             });
         }
@@ -395,7 +439,9 @@ app.post('/api/notifications/test-email', async (req, res) => {
         });
 
     } catch (error) {
+        logger.error('Error enviando email de prueba:', error);
         res.status(500).json({
+            success: false,
             error: 'Error enviando email de prueba',
             message: error.message
         });
@@ -407,6 +453,7 @@ app.get('/api/notifications/stats', (req, res) => {
     const stats = notificationService.getStats();
 
     res.json({
+        success: true,
         message: 'Estadísticas de notificaciones',
         stats,
         timestamp: new Date().toISOString()
@@ -417,37 +464,42 @@ app.get('/api/notifications/stats', (req, res) => {
 // ENDPOINTS PRINCIPALES DE AFIP
 // ==============================================
 
-// ENDPOINT PRINCIPAL - Ahora usa AFIP Real o Mock según configuración
+// ENDPOINT PRINCIPAL - Consulta de contribuyente
 app.get('/api/afip/taxpayer/:cuit', async (req, res) => {
     const { cuit } = req.params;
 
-    console.log(`📊 Consultando contribuyente: ${cuit} (Modo: ${config.afipMockMode ? 'MOCK' : 'REAL'})`);
+    logger.info(`📊 Consultando contribuyente: ${cuit} (Modo: ${config.afipMockMode ? 'MOCK' : 'REAL'})`);
 
     try {
         let taxpayerData;
 
         if (config.afipMockMode) {
             // Modo MOCK
-            console.log('🎭 Usando datos simulados');
+            logger.debug('🎭 Usando datos simulados');
             taxpayerData = getMockTaxpayerInfo(cuit);
         } else {
             // Modo REAL
-            console.log('🌐 Consultando AFIP Real');
+            logger.debug('🌐 Consultando AFIP Real');
             try {
                 taxpayerData = await getAfipTaxpayerInfo(cuit);
-                console.log('✅ Datos obtenidos de AFIP Real');
+                logger.debug('✅ Datos obtenidos de AFIP Real');
             } catch (afipError) {
-                console.warn('⚠️ Error en AFIP Real, usando fallback Mock:', afipError.message);
+                logger.warn('⚠️ Error en AFIP Real, usando fallback Mock:', afipError.message);
                 taxpayerData = getMockTaxpayerInfo(cuit);
                 taxpayerData.fuente = 'MOCK_FALLBACK';
             }
         }
 
-        res.json(taxpayerData);
+        res.json({
+            success: true,
+            data: taxpayerData,
+            timestamp: new Date().toISOString()
+        });
 
     } catch (error) {
-        console.error('❌ Error general:', error);
+        logger.error('❌ Error general:', error);
         res.status(500).json({
+            success: false,
             error: 'Error consultando contribuyente',
             message: error.message,
             cuit: cuit,
@@ -463,12 +515,13 @@ app.post('/api/compliance/check', async (req, res) => {
     // Validación básica
     if (!cuit || !period) {
         return res.status(400).json({
+            success: false,
             error: 'CUIT y período son requeridos',
             timestamp: new Date().toISOString()
         });
     }
 
-    console.log(`🔍 Verificando compliance: ${cuit} (Modo: ${config.afipMockMode ? 'MOCK' : 'REAL'})`);
+    logger.info(`🔍 Verificando compliance: ${cuit} (Modo: ${config.afipMockMode ? 'MOCK' : 'REAL'})`);
 
     try {
         // Obtener datos del contribuyente para el análisis
@@ -544,20 +597,25 @@ app.post('/api/compliance/check', async (req, res) => {
                 complianceResult.notificationSent = true;
                 complianceResult.notificationDetails = notificationResult;
 
-                console.log(`📧 Notificación enviada automáticamente para ${cuit}`);
+                logger.info(`📧 Notificación enviada automáticamente para ${cuit}`);
 
             } catch (notificationError) {
-                console.error('❌ Error enviando notificación:', notificationError);
+                logger.error('❌ Error enviando notificación:', notificationError);
                 complianceResult.notificationSent = false;
                 complianceResult.notificationError = notificationError.message;
             }
         }
 
-        res.json(complianceResult);
+        res.json({
+            success: true,
+            data: complianceResult,
+            timestamp: new Date().toISOString()
+        });
 
     } catch (error) {
-        console.error('❌ Error en compliance check:', error);
+        logger.error('❌ Error en compliance check:', error);
         res.status(500).json({
+            success: false,
             error: 'Error verificando compliance',
             message: error.message,
             timestamp: new Date().toISOString()
@@ -569,7 +627,7 @@ app.post('/api/compliance/check', async (req, res) => {
 // ENDPOINTS ADICIONALES
 // ==============================================
 
-// Endpoint para alertas (ahora incluye casos problemáticos)
+// Endpoint para alertas
 app.get('/api/alerts', (req, res) => {
     const mockAlerts = [
         {
@@ -614,7 +672,11 @@ app.get('/api/alerts', (req, res) => {
         }
     ];
 
-    res.json(mockAlerts);
+    res.json({
+        success: true,
+        data: mockAlerts,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Endpoint para casos problemáticos
@@ -622,8 +684,9 @@ app.get('/api/afip/problematic-cuits', (req, res) => {
     const summary = getProblematicSummary();
 
     res.json({
+        success: true,
         message: 'CUITs problemáticos para testing de compliance',
-        ...summary,
+        data: summary,
         timestamp: new Date().toISOString()
     });
 });
@@ -635,6 +698,7 @@ app.post('/api/demo/problematic-case', async (req, res) => {
 
         if (!email) {
             return res.status(400).json({
+                success: false,
                 error: 'Email es requerido para la demostración'
             });
         }
@@ -655,16 +719,20 @@ app.post('/api/demo/problematic-case', async (req, res) => {
         res.json({
             success: true,
             message: 'Demostración ejecutada exitosamente',
-            cuit: problematicCuit,
-            taxpayer: taxpayerData.razonSocial,
-            complianceScore: complianceResult.alertType,
-            emailSent: complianceResult.successful > 0,
-            notificationResults: complianceResult.results,
+            data: {
+                cuit: problematicCuit,
+                taxpayer: taxpayerData.razonSocial,
+                complianceScore: complianceResult.alertType,
+                emailSent: complianceResult.successful > 0,
+                notificationResults: complianceResult.results
+            },
             timestamp: new Date().toISOString()
         });
 
     } catch (error) {
+        logger.error('Error en demostración:', error);
         res.status(500).json({
+            success: false,
             error: 'Error en demostración',
             message: error.message
         });
@@ -677,8 +745,9 @@ app.post('/api/demo/problematic-case', async (req, res) => {
 
 // Manejo de errores
 app.use((err, req, res, next) => {
-    console.error('Error:', err);
+    logger.error('Error no manejado:', err);
     res.status(500).json({
+        success: false,
         error: 'Error interno del servidor',
         message: err.message,
         timestamp: new Date().toISOString()
@@ -688,6 +757,7 @@ app.use((err, req, res, next) => {
 // Ruta 404
 app.use((req, res) => {
     res.status(404).json({
+        success: false,
         error: 'Recurso no encontrado',
         path: req.path,
         timestamp: new Date().toISOString()
@@ -705,12 +775,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws) => {
-    console.log('Cliente WebSocket conectado');
+    logger.info('Cliente WebSocket conectado');
 
     // Enviar mensaje de bienvenida
     ws.send(JSON.stringify({
         type: 'welcome',
         message: `Conectado a AFIP Monitor MCP (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
+        groqEnabled: !!groqClient,
         emailNotifications: notificationConfig.email.enabled,
         timestamp: new Date().toISOString()
     }));
@@ -732,7 +803,7 @@ wss.on('connection', (ws) => {
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
-            console.log('Mensaje recibido:', data);
+            logger.debug('Mensaje WebSocket recibido:', data);
 
             // Echo del mensaje
             ws.send(JSON.stringify({
@@ -741,12 +812,12 @@ wss.on('connection', (ws) => {
                 timestamp: new Date().toISOString()
             }));
         } catch (error) {
-            console.error('Error procesando mensaje:', error);
+            logger.error('Error procesando mensaje WebSocket:', error);
         }
     });
 
     ws.on('close', () => {
-        console.log('Cliente WebSocket desconectado');
+        logger.info('Cliente WebSocket desconectado');
         clearInterval(alertInterval);
     });
 });
@@ -757,17 +828,17 @@ wss.on('connection', (ws) => {
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-    console.log('Recibido SIGTERM, cerrando servidor...');
+    logger.info('Recibido SIGTERM, cerrando servidor...');
     server.close(() => {
-        console.log('Servidor cerrado');
+        logger.info('Servidor cerrado');
         process.exit(0);
     });
 });
 
 process.on('SIGINT', () => {
-    console.log('Recibido SIGINT, cerrando servidor...');
+    logger.info('Recibido SIGINT, cerrando servidor...');
     server.close(() => {
-        console.log('Servidor cerrado');
+        logger.info('Servidor cerrado');
         process.exit(0);
     });
 });
@@ -782,8 +853,7 @@ server.listen(config.port, config.host, () => {
     console.log(`🎯 Modo AFIP: ${config.afipMockMode ? '🎭 MOCK' : '🌐 REAL'}`);
     console.log(`📧 Email: ${notificationConfig.email.enabled ? '✅ HABILITADO' : '❌ DESHABILITADO'}`);
 
-    // AGREGAR: Estado de Groq AI
-    const { groqClient } = app.locals || {};
+    // Estado de Groq AI
     if (groqClient && groqClient.isInitialized) {
         console.log(`🤖 Groq AI: ✅ CONECTADO (${groqClient.model})`);
         console.log(`⚡ Velocidad: ~280 tokens/segundo - Costo: $0.59-0.79/M tokens`);
@@ -808,15 +878,22 @@ server.listen(config.port, config.host, () => {
         console.log(`📬 Proveedor de email: ${notificationConfig.email.provider}`);
     }
 
-    // AGREGAR: Resumen de endpoints disponibles
+    // Resumen de endpoints disponibles
     console.log('\n📋 Endpoints disponibles:');
     console.log(`   • Dashboard: http://${config.host}:${config.port}/`);
     console.log(`   • Health Check: http://${config.host}:${config.port}/health`);
-    console.log(`   • MCP Tools: http://${config.host}:${config.port}/api/mcp/tools`);
+    console.log(`   • AFIP Info: http://${config.host}:${config.port}/api/afip/taxpayer/[cuit]`);
+    console.log(`   • Compliance: http://${config.host}:${config.port}/api/compliance/check`);
     if (groqClient && groqClient.isInitialized) {
         console.log(`   • Chat IA: http://${config.host}:${config.port}/api/groq/chat`);
         console.log(`   • Estado IA: http://${config.host}:${config.port}/api/groq/status`);
     }
+    console.log('');
+
+    // Mostrar CUITs de prueba disponibles
+    console.log('🧪 CUITs de prueba disponibles:');
+    console.log('   • Casos normales: 30500010912, 27230938607, 20123456789');
+    console.log('   • Casos problemáticos:', PROBLEMATIC_TEST_CUITS.join(', '));
     console.log('');
 });
 
