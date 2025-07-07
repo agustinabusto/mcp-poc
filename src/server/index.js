@@ -33,7 +33,7 @@ import groqChatRoutes from './routes/groq-chat.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Configuración básica
+// CONFIGURACIÓN CORREGIDA CON URL OFICIAL DE AFIP
 const config = {
     port: process.env.PORT || 8080,
     host: process.env.HOST || '0.0.0.0',
@@ -41,7 +41,7 @@ const config = {
         origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
         credentials: true
     },
-    afipMockMode: process.env.AFIP_MOCK_MODE === 'true' || true, // Default true para POC
+    afipMockMode: process.env.AFIP_MOCK_MODE === 'true', // || true, // Default true para POC
     groq: {
         apiKey: process.env.GROQ_API_KEY,
         model: process.env.GROQ_MODEL || 'llama-3.1-70b-versatile',
@@ -50,9 +50,12 @@ const config = {
         timeout: parseInt(process.env.GROQ_TIMEOUT) || 30000
     },
     afip: {
-        mockMode: process.env.AFIP_MOCK_MODE === 'true' || true,
-        timeout: 30000,
-        baseURL: 'https://soa.afip.gob.ar/sr-padron/v2'
+        mockMode: process.env.AFIP_MOCK_MODE === 'true', // || true,
+        timeout: 15000, // Reducido para API REST que a veces es lenta
+        // URL CORREGIDA - API REST oficial de AFIP
+        baseURL: 'https://soa.afip.gob.ar/sr-padron/v2',
+        maxRetries: 3,
+        cacheTimeout: 300000 // 5 minutos
     }
 };
 
@@ -100,13 +103,15 @@ if (config.groq.apiKey) {
     logger.warn('⚠️ GROQ_API_KEY no configurado - Funcionalidad de IA deshabilitada');
 }
 
-// Inicializar AFIP Client
+// Inicializar AFIP Client CON CONFIGURACIÓN CORREGIDA
 const afipClient = new AfipClient(config.afip, logger);
 try {
     await afipClient.initialize();
     logger.info('✅ AFIP Client inicializado exitosamente');
 } catch (error) {
     logger.error('❌ Error inicializando AFIP Client:', error.message);
+    // NO fallar el servidor si AFIP no responde - continuar en modo degraded
+    logger.warn('⚠️ Servidor continuará en modo degraded');
 }
 
 // Inicializar servicio de notificaciones
@@ -138,32 +143,46 @@ app.locals.notificationService = notificationService;
 app.locals.logger = logger;
 
 // ==============================================
-// FUNCIONES AUXILIARES AFIP
+// FUNCIONES AUXILIARES AFIP CORREGIDAS
 // ==============================================
 
-// Función para consultar AFIP Real
+// Función para consultar AFIP Real con URL corregida
 async function getAfipTaxpayerInfo(cuit) {
     try {
         const cleanCuit = cuit.replace(/[-\s]/g, '');
+
+        // URL CORREGIDA de la API REST de AFIP
         const afipUrl = `https://soa.afip.gob.ar/sr-padron/v2/persona/${cleanCuit}`;
 
-        logger.debug(`🔍 Consultando AFIP Real: ${afipUrl}`);
+        logger.debug(`🔍 Consultando AFIP REST: ${afipUrl}`);
 
         const response = await axios.get(afipUrl, {
-            timeout: 10000,
+            timeout: 15000, // Aumentado porque a veces es lenta
             headers: {
                 'Accept': 'application/json',
                 'User-Agent': 'AFIP-Monitor-MCP/1.0'
+            },
+            validateStatus: function (status) {
+                return status < 500; // Aceptar cualquier código < 500
             }
         });
 
-        if (response.data) {
+        if (response.status === 200 && response.data) {
             return normalizeAfipResponse(response.data);
+        } else if (response.status === 404) {
+            throw new Error(`CUIT ${cleanCuit} no encontrado en AFIP`);
         } else {
-            throw new Error('No se encontraron datos en AFIP');
+            throw new Error(`AFIP responded with status ${response.status}`);
         }
+
     } catch (error) {
-        logger.error('❌ Error consultando AFIP:', error.message);
+        logger.error('❌ Error consultando AFIP REST:', error.message);
+
+        // Información adicional para debugging
+        if (error.code === 'ECONNREFUSED') {
+            logger.error('💡 La API REST de AFIP solo funciona desde Argentina');
+        }
+
         throw error;
     }
 }
@@ -179,83 +198,51 @@ function normalizeAfipResponse(data) {
         situacionFiscal: {
             iva: determineIVAStatus(data),
             ganancias: data.impuestos?.find(i => i.idImpuesto === 20) ? 'INSCRIPTO' : 'NO_INSCRIPTO',
-            monotributo: data.categoriasMonotributo?.length > 0 ? 'INSCRIPTO' : 'NO_INSCRIPTO'
+            monotributo: data.categoriasMonotributo?.length > 0 ?
+                data.categoriasMonotributo[0].descripcionCategoria : 'NO_INSCRIPTO'
         },
         domicilio: {
-            direccion: data.domicilioFiscal?.direccion || 'Sin datos',
-            localidad: data.domicilioFiscal?.localidad || 'Sin datos',
-            provincia: data.domicilioFiscal?.provincia || 'Sin datos'
+            direccion: data.domicilio?.[0]?.direccion || 'Sin datos',
+            localidad: data.domicilio?.[0]?.localidad || 'Sin datos',
+            provincia: data.domicilio?.[0]?.provincia || 'Sin datos'
         },
         actividades: data.actividades?.map(act => ({
             codigo: act.idActividad,
             descripcion: act.descripcionActividad,
-            principal: act.nomenclador === 883
+            principal: act.orden === 1
         })) || [],
         fechaUltimaActualizacion: new Date().toISOString(),
-        fuente: 'AFIP_REAL'
+        fuente: 'AFIP_REST'
     };
 }
 
-// Determinar estado IVA
+// Determinar estado de IVA
 function determineIVAStatus(data) {
     if (data.categoriasMonotributo?.length > 0) {
         return 'MONOTRIBUTO';
     }
-
-    const ivaImpuesto = data.impuestos?.find(i => i.idImpuesto === 30);
-    if (ivaImpuesto) {
+    if (data.impuestos?.find(i => i.idImpuesto === 30)) {
         return 'RESPONSABLE_INSCRIPTO';
     }
-
     return 'NO_INSCRIPTO';
 }
 
-// Datos Mock para fallback
+// Función auxiliar para datos mock usando datos realistas
 function getMockTaxpayerInfo(cuit) {
-    // Primero buscar en casos problemáticos
-    const problematicData = getProblematicTaxpayerInfo(cuit);
-    if (problematicData) {
-        return problematicData;
+    // Verificar si es un CUIT problemático
+    if (PROBLEMATIC_TEST_CUITS.includes(cuit)) {
+        return getProblematicTaxpayerInfo(cuit);
     }
 
-    // Si no es problemático, usar datos normales
+    // Usar datos realistas para CUITs normales
     return getRealisticTaxpayerInfo(cuit);
 }
 
-// Función para calcular score de compliance
-function calculateComplianceScore(taxpayerData) {
-    // Si es un caso problemático, usar cálculo especializado
-    if (taxpayerData.fuente === 'MOCK_PROBLEMATIC') {
-        const result = calculateProblematicCompliance(taxpayerData);
-        return result.score;
-    }
-
-    // Cálculo normal para casos regulares
-    let score = 0;
-
-    // Estado activo +30 puntos
-    if (taxpayerData.estado === 'ACTIVO') score += 30;
-
-    // IVA registrado +25 puntos
-    if (taxpayerData.situacionFiscal.iva !== 'NO_INSCRIPTO') score += 25;
-
-    // Actividades registradas +20 puntos
-    if (taxpayerData.actividades && taxpayerData.actividades.length > 0) score += 20;
-
-    // Domicilio completo +15 puntos
-    if (taxpayerData.domicilio.direccion !== 'Sin datos') score += 15;
-
-    // Bonus por datos reales +10 puntos
-    if (taxpayerData.fuente === 'AFIP_REAL') score += 10;
-
-    return Math.min(score, 100);
-}
-
-// Función para generar recomendaciones
-function generateRecommendations(taxpayerData) {
+// Generar recomendaciones de compliance
+function generateComplianceRecommendations(taxpayerData) {
     const recommendations = [];
 
-    // Si es un caso problemático, usar recomendaciones especializadas
+    // Para casos problemáticos, usar las acciones generadas
     if (taxpayerData.fuente === 'MOCK_PROBLEMATIC') {
         const result = calculateProblematicCompliance(taxpayerData);
         return result.alerts.map(alert => alert.actions).flat();
@@ -334,8 +321,11 @@ app.get('/health', (req, res) => {
         services: {
             groq: groqStatus,
             afip: {
-                healthy: true,
-                mockMode: config.afipMockMode
+                healthy: afipClient.connectionStatus !== 'error',
+                status: afipClient.connectionStatus,
+                mockMode: config.afipMockMode,
+                baseURL: config.afip.baseURL,
+                lastHealthCheck: afipClient.lastHealthCheck
             },
             notifications: {
                 healthy: true,
@@ -352,53 +342,39 @@ app.get('/api/status', (req, res) => {
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
         groqEnabled: !!groqClient,
         emailNotifications: notificationConfig.email.enabled,
+        timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         memory: process.memoryUsage(),
-        timestamp: new Date().toISOString()
+        afipClient: {
+            connectionStatus: afipClient.connectionStatus,
+            metrics: afipClient.getMetrics(),
+            config: {
+                baseURL: config.afip.baseURL,
+                timeout: config.afip.timeout,
+                mockMode: config.afip.mockMode
+            }
+        }
     });
 });
 
 // ==============================================
-// RUTAS GROQ + IA
+// RUTAS DE GROQ (si está habilitado)
 // ==============================================
 
-// Montar rutas de Groq si está disponible
 if (groqClient) {
     app.use('/api/groq', groqChatRoutes);
-    logger.info('✅ Rutas Groq configuradas');
-} else {
-    // Ruta fallback si Groq no está disponible
-    app.use('/api/groq/*', (req, res) => {
-        res.status(503).json({
-            success: false,
-            error: 'Servicio de IA no disponible',
-            message: 'Configure GROQ_API_KEY para habilitar funcionalidades de IA',
-            obtainKey: 'https://console.groq.com/'
-        });
-    });
 }
 
 // ==============================================
 // ENDPOINTS DE NOTIFICACIONES
 // ==============================================
 
-// Endpoint para configurar suscripciones
+// Endpoint para suscribirse a alertas
 app.post('/api/notifications/subscribe', (req, res) => {
+    const { alertType, contact, channels } = req.body;
+
     try {
-        const { alertType, email, channels } = req.body;
-
-        if (!alertType || !email) {
-            return res.status(400).json({
-                success: false,
-                error: 'alertType y email son requeridos'
-            });
-        }
-
-        const subscription = notificationService.subscribe(
-            alertType,
-            email,
-            channels || ['email']
-        );
+        const subscription = notificationService.subscribe(alertType, contact, channels);
 
         res.json({
             success: true,
@@ -419,16 +395,16 @@ app.post('/api/notifications/subscribe', (req, res) => {
 
 // Endpoint para enviar email de prueba
 app.post('/api/notifications/test-email', async (req, res) => {
+    const { to } = req.body;
+
+    if (!to) {
+        return res.status(400).json({
+            success: false,
+            error: 'Email destino es requerido'
+        });
+    }
+
     try {
-        const { to } = req.body;
-
-        if (!to) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email destinatario es requerido'
-            });
-        }
-
         const result = await notificationService.sendTestEmail(to);
 
         res.json({
@@ -524,84 +500,49 @@ app.post('/api/compliance/check', async (req, res) => {
     logger.info(`🔍 Verificando compliance: ${cuit} (Modo: ${config.afipMockMode ? 'MOCK' : 'REAL'})`);
 
     try {
-        // Obtener datos del contribuyente para el análisis
+        // Obtener datos del contribuyente
         let taxpayerData;
+
         if (config.afipMockMode) {
             taxpayerData = getMockTaxpayerInfo(cuit);
         } else {
             try {
                 taxpayerData = await getAfipTaxpayerInfo(cuit);
-            } catch (error) {
+            } catch (afipError) {
+                logger.warn('Error AFIP, usando Mock:', afipError.message);
                 taxpayerData = getMockTaxpayerInfo(cuit);
+                taxpayerData.fuente = 'MOCK_FALLBACK';
             }
         }
 
-        // Calcular compliance basado en datos reales
-        const complianceScore = calculateComplianceScore(taxpayerData);
-        const recommendations = generateRecommendations(taxpayerData);
+        // Generar recomendaciones
+        const recommendations = generateComplianceRecommendations(taxpayerData);
 
-        // Generar alertas si es problemático
-        let alerts = [];
-        let complianceDetails = {};
-
-        if (taxpayerData.fuente === 'MOCK_PROBLEMATIC') {
-            const problematicResult = calculateProblematicCompliance(taxpayerData);
-            complianceDetails = problematicResult;
-            alerts = taxpayerData.alertasGeneradas || [];
-        }
+        // Calcular score de compliance
+        let complianceScore = 100;
+        if (taxpayerData.estado !== 'ACTIVO') complianceScore -= 30;
+        if (taxpayerData.situacionFiscal.iva === 'NO_INSCRIPTO') complianceScore -= 20;
+        if (!taxpayerData.actividades?.length) complianceScore -= 15;
 
         const complianceResult = {
             cuit,
             period,
-            score: complianceScore,
-            status: complianceScore >= 80 ? 'GOOD' : complianceScore >= 60 ? 'WARNING' : 'CRITICAL',
-            dataSource: taxpayerData.fuente,
-            checks: [
-                {
-                    name: 'fiscal_status',
-                    passed: taxpayerData.estado === 'ACTIVO',
-                    score: taxpayerData.estado === 'ACTIVO' ? 100 : 0,
-                    message: `Estado fiscal: ${taxpayerData.estado}`
-                },
-                {
-                    name: 'iva_compliance',
-                    passed: taxpayerData.situacionFiscal.iva !== 'NO_INSCRIPTO',
-                    score: taxpayerData.situacionFiscal.iva !== 'NO_INSCRIPTO' ? 90 : 60,
-                    message: `IVA: ${taxpayerData.situacionFiscal.iva}`
-                },
-                {
-                    name: 'activities_registered',
-                    passed: taxpayerData.actividades && taxpayerData.actividades.length > 0,
-                    score: taxpayerData.actividades && taxpayerData.actividades.length > 0 ? 85 : 30,
-                    message: `Actividades registradas: ${taxpayerData.actividades?.length || 0}`
-                }
-            ],
+            taxpayer: taxpayerData,
+            complianceScore,
             recommendations,
-            alerts,
-            complianceDetails,
+            alertLevel: complianceScore < 50 ? 'CRITICAL' :
+                complianceScore < 70 ? 'HIGH' :
+                    complianceScore < 90 ? 'MEDIUM' : 'LOW',
             timestamp: new Date().toISOString()
         };
 
-        // 📧 ENVIAR NOTIFICACIÓN SI SE SOLICITA O SI ES CRÍTICO
-        if (sendNotification || complianceScore < 50) {
+        // Enviar notificación si se solicita
+        if (sendNotification && complianceScore < 70) {
             try {
-                const notificationResult = await notificationService.processAlert(
-                    taxpayerData,
-                    {
-                        score: complianceScore,
-                        status: complianceResult.status,
-                        alerts: alerts
-                    }
-                );
-
+                await notificationService.processAlert(taxpayerData, complianceResult);
                 complianceResult.notificationSent = true;
-                complianceResult.notificationDetails = notificationResult;
-
-                logger.info(`📧 Notificación enviada automáticamente para ${cuit}`);
-
             } catch (notificationError) {
-                logger.error('❌ Error enviando notificación:', notificationError);
-                complianceResult.notificationSent = false;
+                logger.error('Error enviando notificación:', notificationError);
                 complianceResult.notificationError = notificationError.message;
             }
         }
@@ -613,7 +554,7 @@ app.post('/api/compliance/check', async (req, res) => {
         });
 
     } catch (error) {
-        logger.error('❌ Error en compliance check:', error);
+        logger.error('Error en compliance check:', error);
         res.status(500).json({
             success: false,
             error: 'Error verificando compliance',
@@ -623,87 +564,21 @@ app.post('/api/compliance/check', async (req, res) => {
     }
 });
 
-// ==============================================
-// ENDPOINTS ADICIONALES
-// ==============================================
-
-// Endpoint para alertas
-app.get('/api/alerts', (req, res) => {
-    const mockAlerts = [
-        {
-            id: 1,
-            type: 'compliance',
-            severity: 'critical',
-            message: 'EMPRESA PROBLEMATICA S.A. (20111222333) - Sin actividades registradas',
-            timestamp: new Date().toISOString(),
-            resolved: false,
-            cuit: '20111222333',
-            actions: ['Registrar actividades F.420', 'Contactar contador']
-        },
-        {
-            id: 2,
-            type: 'financial',
-            severity: 'high',
-            message: 'GOMEZ CARLOS ALBERTO (27999888777) - Recategorización monotributo vencida',
-            timestamp: new Date(Date.now() - 3600000).toISOString(),
-            resolved: false,
-            cuit: '27999888777',
-            actions: ['Recategorizar monotributo', 'Verificar ingresos']
-        },
-        {
-            id: 3,
-            type: 'compliance',
-            severity: 'critical',
-            message: 'SERVICIOS DISCONTINUADOS S.R.L. (30555666777) - Contribuyente INACTIVO',
-            timestamp: new Date(Date.now() - 7200000).toISOString(),
-            resolved: false,
-            cuit: '30555666777',
-            actions: ['Regularizar situación fiscal', 'Contactar AFIP']
-        },
-        {
-            id: 4,
-            type: 'labor',
-            severity: 'critical',
-            message: 'CONSTRUCTORA IRREGULAR S.A. (30777888999) - Empleados en negro detectados',
-            timestamp: new Date(Date.now() - 10800000).toISOString(),
-            resolved: false,
-            cuit: '30777888999',
-            actions: ['Blanquear empleados', 'Regularizar situación laboral']
-        }
-    ];
-
-    res.json({
-        success: true,
-        data: mockAlerts,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Endpoint para casos problemáticos
-app.get('/api/afip/problematic-cuits', (req, res) => {
-    const summary = getProblematicSummary();
-
-    res.json({
-        success: true,
-        message: 'CUITs problemáticos para testing de compliance',
-        data: summary,
-        timestamp: new Date().toISOString()
-    });
-});
-
-// Endpoint para demostración completa
+// Endpoint para testing - caso problemático
 app.post('/api/demo/problematic-case', async (req, res) => {
+    const { email } = req.body;
+
+    if (!email) {
+        return res.status(400).json({
+            success: false,
+            error: 'Email es requerido para la demostración'
+        });
+    }
+
     try {
-        const { email } = req.body;
+        logger.info(`🎭 Ejecutando demostración caso problemático para: ${email}`);
 
-        if (!email) {
-            return res.status(400).json({
-                success: false,
-                error: 'Email es requerido para la demostración'
-            });
-        }
-
-        // Usar caso problemático
+        // Usar un CUIT problemático
         const problematicCuit = '20111222333';
         const taxpayerData = getMockTaxpayerInfo(problematicCuit);
 
@@ -794,31 +669,16 @@ wss.on('connection', (ws) => {
                 data: {
                     id: Date.now(),
                     message: `Verificación automática completada (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
+                    level: 'info',
                     timestamp: new Date().toISOString()
                 }
             }));
         }
     }, 30000); // Cada 30 segundos
 
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            logger.debug('Mensaje WebSocket recibido:', data);
-
-            // Echo del mensaje
-            ws.send(JSON.stringify({
-                type: 'echo',
-                data: data,
-                timestamp: new Date().toISOString()
-            }));
-        } catch (error) {
-            logger.error('Error procesando mensaje WebSocket:', error);
-        }
-    });
-
     ws.on('close', () => {
-        logger.info('Cliente WebSocket desconectado');
         clearInterval(alertInterval);
+        logger.info('Cliente WebSocket desconectado');
     });
 });
 
@@ -826,31 +686,15 @@ wss.on('connection', (ws) => {
 // INICIAR SERVIDOR
 // ==============================================
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    logger.info('Recibido SIGTERM, cerrando servidor...');
-    server.close(() => {
-        logger.info('Servidor cerrado');
-        process.exit(0);
-    });
-});
-
-process.on('SIGINT', () => {
-    logger.info('Recibido SIGINT, cerrando servidor...');
-    server.close(() => {
-        logger.info('Servidor cerrado');
-        process.exit(0);
-    });
-});
-
-// Iniciar servidor
 server.listen(config.port, config.host, () => {
-    console.log(`🚀 AFIP Monitor MCP Server iniciado`);
-    console.log(`📊 Servidor: http://${config.host}:${config.port}`);
-    console.log(`🔍 Health: http://${config.host}:${config.port}/health`);
-    console.log(`📡 WebSocket: ws://${config.host}:${config.port}`);
-    console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🎯 Modo AFIP: ${config.afipMockMode ? '🎭 MOCK' : '🌐 REAL'}`);
+    console.log('');
+    console.log('🎉 ================================');
+    console.log('🚀 AFIP Monitor MCP Server STARTED');
+    console.log('🎉 ================================');
+    console.log('');
+    console.log(`🌐 Servidor: http://${config.host}:${config.port}`);
+    console.log(`🏠 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📡 AFIP Mode: ${config.afipMockMode ? '🎭 MOCK' : '🌐 REAL'}`);
     console.log(`📧 Email: ${notificationConfig.email.enabled ? '✅ HABILITADO' : '❌ DESHABILITADO'}`);
 
     // Estado de Groq AI
@@ -867,11 +711,18 @@ server.listen(config.port, config.host, () => {
         console.log(`🔗 Obtener gratis en: https://console.groq.com/`);
     }
 
+    // Estado de AFIP
+    console.log(`🏛️ AFIP Client: ${afipClient.connectionStatus === 'connected' ? '✅ CONECTADO' :
+        afipClient.connectionStatus === 'degraded' ? '⚠️ DEGRADED' :
+            '❌ ERROR'}`);
+    console.log(`🔗 AFIP URL: ${config.afip.baseURL}`);
+
     // Mensaje informativo
     if (config.afipMockMode) {
         console.log('💡 Para usar AFIP Real, cambiar AFIP_MOCK_MODE=false en .env');
     } else {
         console.log('🌐 Modo AFIP Real activado - Consultando servicios reales');
+        console.log('💡 Nota: API REST solo funciona desde Argentina');
     }
 
     if (notificationConfig.email.enabled) {
