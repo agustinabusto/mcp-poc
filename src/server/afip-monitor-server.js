@@ -5,6 +5,8 @@ import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import crypto from 'crypto';
 
 // Tools
 import { CheckComplianceTool } from './tools/check-compliance.js';
@@ -29,6 +31,21 @@ import { AutoBankReconciliationTool } from './tools/auto-bank-reconciliation.js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const upload = multer({
+  dest: 'data/uploads/',
+  limits: {
+    fileSize: 10 * 1024 * 1024 // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo no permitido'), false);
+    }
+  }
+});
 
 export class AfipMonitorServer {
   constructor(config) {

@@ -34,6 +34,7 @@ export const useMonitoring = () => {
 
     // Función para conectar WebSocket
     const connect = useCallback(() => {
+        console.log("Conecta al socket")
         try {
             const { ws: wsUrl } = getServerUrl();
 
