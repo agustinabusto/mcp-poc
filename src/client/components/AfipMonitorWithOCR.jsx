@@ -39,6 +39,8 @@ import { useCompliance } from '../hooks/useCompliance.js';
 import { useMonitoring } from '../hooks/useMonitoring.js';
 import { getMCPClient } from '../services/mcp-client.js';
 
+import { searchService } from '../services/search-service.js';
+
 // Nuevos hooks para OCR
 import { useOCR } from '../hooks/useOCR.js';
 import { useBankReconciliation } from '../hooks/useBankReconciliation.js';
@@ -108,6 +110,27 @@ const AfipMonitorWithOCR = () => {
         clearErrors,
         loading: monitoringLoading
     } = useMonitoring();
+
+    const handleComplianceCheck = async (cuit) => {
+        try {
+            const complianceResult = await checkCompliance(cuit);
+            setComplianceData(complianceResult);
+            setCurrentView(VIEWS.COMPLIANCE);
+
+            addAlert({
+                type: 'success',
+                title: 'Compliance Check',
+                message: `Análisis completado para CUIT ${cuit}`
+            });
+        } catch (error) {
+            console.error("Error en compliance check:", error);
+            addAlert({
+                type: 'error',
+                title: 'Error en Compliance',
+                message: `No se pudo realizar el análisis: ${error.message}`
+            });
+        }
+    };
 
     // Nuevos hooks OCR
     const {
@@ -389,8 +412,8 @@ const AfipMonitorWithOCR = () => {
                         {alerts.slice(0, 5).map((alert) => (
                             <div key={alert.id} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
                                 <div className={`w-2 h-2 rounded-full mt-2 ${alert.type === 'error' ? 'bg-red-500' :
-                                        alert.type === 'warning' ? 'bg-yellow-500' :
-                                            alert.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
+                                    alert.type === 'warning' ? 'bg-yellow-500' :
+                                        alert.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
                                     }`}></div>
                                 <div className="flex-1">
                                     <p className="text-sm font-medium text-gray-900">{alert.title}</p>
@@ -438,7 +461,13 @@ const AfipMonitorWithOCR = () => {
             case VIEWS.DASHBOARD:
                 return renderDashboardContent();
             case VIEWS.TAXPAYER:
-                return <TaxpayerInfo taxpayerData={taxpayerData} />;
+                return (
+                    <TaxpayerInfo
+                        data={taxpayerData}
+                        onComplianceCheck={handleComplianceCheck}
+                        loading={loading}
+                    />
+                );
             case VIEWS.COMPLIANCE:
                 return <ComplianceDetails complianceData={complianceData} />;
             case VIEWS.ALERTS:

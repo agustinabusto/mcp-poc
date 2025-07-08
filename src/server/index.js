@@ -8,6 +8,7 @@ import { dirname, join } from 'path';
 import { WebSocketServer } from 'ws';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import { mkdir } from 'fs/promises';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -29,6 +30,20 @@ import {
 
 // Importar rutas
 import groqChatRoutes from './routes/groq-chat.js';
+import ocrRoutes from './routes/ocr-routes.js';
+
+// Función para asegurar que existe el directorio de uploads
+async function ensureUploadDirectory() {
+    try {
+        await mkdir('data', { recursive: true });
+        await mkdir('data/uploads', { recursive: true });
+        console.log('📁 Directorio de uploads verificado');
+    } catch (error) {
+        if (error.code !== 'EEXIST') {
+            console.warn('⚠️ Error creando directorio de uploads:', error.message);
+        }
+    }
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -292,7 +307,17 @@ app.get('/', (req, res) => {
             alerts: '/api/alerts',
             compliance: '/api/compliance/check',
             groq: groqClient ? '/api/groq/*' : null,
-            notifications: '/api/notifications/*'
+            notifications: '/api/notifications/*',
+            // Nuevos endpoints OCR
+            ocr: {
+                upload: '/api/ocr/upload',
+                extractInvoice: '/api/ocr/extract-invoice',
+                extractBankStatement: '/api/ocr/extract-bank-statement',
+                history: '/api/ocr/history/:clientId',
+                stats: '/api/ocr/stats/:clientId',
+                status: '/api/ocr/status/:processId',
+                info: '/api/ocr-status'
+            }
         },
         docs: 'https://github.com/snarx-io/afip-monitor-mcp',
         author: 'Snarx.io'
@@ -364,6 +389,45 @@ app.get('/api/status', (req, res) => {
 if (groqClient) {
     app.use('/api/groq', groqChatRoutes);
 }
+
+// ==============================================
+// RUTAS OCR
+// ==============================================
+
+// Usar las rutas OCR
+app.use('/api/ocr', ocrRoutes);
+
+// Endpoint de estado OCR para debugging
+app.get('/api/ocr-status', (req, res) => {
+    res.json({
+        service: 'OCR Service',
+        status: 'active',
+        version: '1.0.0',
+        features: {
+            documentUpload: true,
+            invoiceExtraction: true,
+            bankStatementExtraction: true,
+            historyTracking: true,
+            statistics: true,
+            realTimeProcessing: false // Simulado por ahora
+        },
+        endpoints: {
+            upload: 'POST /api/ocr/upload',
+            extractInvoice: 'POST /api/ocr/extract-invoice',
+            extractBankStatement: 'POST /api/ocr/extract-bank-statement',
+            history: 'GET /api/ocr/history/:clientId',
+            stats: 'GET /api/ocr/stats/:clientId',
+            status: 'GET /api/ocr/status/:processId'
+        },
+        limits: {
+            maxFileSize: '10MB',
+            supportedFormats: ['PDF', 'JPG', 'PNG', 'JPEG'],
+            maxConcurrentProcessing: 5
+        },
+        timestamp: new Date().toISOString()
+    });
+});
+
 
 // ==============================================
 // ENDPOINTS DE NOTIFICACIONES
@@ -685,6 +749,7 @@ wss.on('connection', (ws) => {
 // ==============================================
 // INICIAR SERVIDOR
 // ==============================================
+await ensureUploadDirectory();
 
 server.listen(config.port, config.host, () => {
     console.log('');
@@ -735,11 +800,18 @@ server.listen(config.port, config.host, () => {
     console.log(`   • Health Check: http://${config.host}:${config.port}/health`);
     console.log(`   • AFIP Info: http://${config.host}:${config.port}/api/afip/taxpayer/[cuit]`);
     console.log(`   • Compliance: http://${config.host}:${config.port}/api/compliance/check`);
+
+    // Nuevos endpoints OCR
+    console.log(`   📄 OCR Upload: http://${config.host}:${config.port}/api/ocr/upload`);
+    console.log(`   🧾 Extract Invoice: http://${config.host}:${config.port}/api/ocr/extract-invoice`);
+    console.log(`   🏦 Extract Bank: http://${config.host}:${config.port}/api/ocr/extract-bank-statement`);
+    console.log(`   📊 OCR Stats: http://${config.host}:${config.port}/api/ocr/stats/[clientId]`);
+    console.log(`   📋 OCR History: http://${config.host}:${config.port}/api/ocr/history/[clientId]`);
+
     if (groqClient && groqClient.isInitialized) {
         console.log(`   • Chat IA: http://${config.host}:${config.port}/api/groq/chat`);
         console.log(`   • Estado IA: http://${config.host}:${config.port}/api/groq/status`);
     }
-    console.log('');
 
     // Mostrar CUITs de prueba disponibles
     console.log('🧪 CUITs de prueba disponibles:');

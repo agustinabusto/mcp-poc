@@ -1,11 +1,18 @@
-// src/client/hooks/useOCR.js
+// src/client/hooks/useOCR.js - Versión corregida
 import { useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL } from '../config/constants.js';
 
 export const useOCR = () => {
     const [processingQueue, setProcessingQueue] = useState([]);
     const [recentExtractions, setRecentExtractions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    // Construir URL base sin "/api" ya que API_BASE_URL ya lo incluye
+    const getFullUrl = (endpoint) => {
+        // API_BASE_URL ya incluye "/api", entonces solo agregamos el endpoint
+        return `${API_BASE_URL.replace('/api', '')}${endpoint}`;
+    };
 
     const uploadDocument = useCallback(async (file, documentType, clientId) => {
         setLoading(true);
@@ -17,7 +24,8 @@ export const useOCR = () => {
             formData.append('documentType', documentType);
             formData.append('clientId', clientId);
 
-            const response = await fetch('/api/ocr/upload', {
+            // CORRECCIÓN: Usar URL absoluta
+            const response = await fetch(getFullUrl('/api/ocr/upload'), {
                 method: 'POST',
                 body: formData
             });
@@ -49,7 +57,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            const response = await fetch('/api/ocr/extract-invoice', {
+            // CORRECCIÓN: Usar URL absoluta
+            const response = await fetch(getFullUrl('/api/ocr/extract-invoice'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -76,7 +85,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            const response = await fetch('/api/ocr/extract-bank-statement', {
+            // CORRECCIÓN: Usar URL absoluta
+            const response = await fetch(getFullUrl('/api/ocr/extract-bank-statement'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -103,7 +113,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            const response = await fetch(`/api/ocr/history/${clientId}?page=${page}&limit=${limit}`);
+            // CORRECCIÓN: Usar URL absoluta
+            const response = await fetch(getFullUrl(`/api/ocr/history/${clientId}?page=${page}&limit=${limit}`));
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -124,7 +135,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            const response = await fetch(`/api/ocr/stats/${clientId}`);
+            // CORRECCIÓN: Usar URL absoluta
+            const response = await fetch(getFullUrl(`/api/ocr/stats/${clientId}`));
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
