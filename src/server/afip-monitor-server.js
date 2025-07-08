@@ -125,7 +125,7 @@ export class AfipMonitorServer {
     this.httpApp.use(cors({
       origin: process.env.NODE_ENV === 'production'
         ? this.config.server.allowedOrigins
-        : true,
+        : ['http://localhost:3000', 'http://localhost:3001'], // Agregar ambos puertos,
       credentials: true
     }));
 
