@@ -20,6 +20,13 @@ import { ComplianceEngine } from './services/compliance-engine.js';
 import { NotificationService } from './services/notification-service.js';
 import { SchedulerService } from './services/scheduler-service.js';
 
+// Additional tools for advanced features - OCR
+import { OCRService } from './services/ocr-service.js';
+import { ExtractOCRDataTool } from './tools/extract-ocr-data.js';
+import { AutoCategorizeTransactionsTool } from './tools/auto-categorize-transactions.js';
+import { AutoBankReconciliationTool } from './tools/auto-bank-reconciliation.js';
+
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -56,7 +63,8 @@ export class AfipMonitorServer {
       alerts: new AlertManager(this.database, this.logger),
       compliance: new ComplianceEngine(this.config.compliance, this.logger),
       notifications: new NotificationService(this.config.notifications, this.logger),
-      scheduler: new SchedulerService(this.logger)
+      scheduler: new SchedulerService(this.logger),
+      ocr: new OCRService(this.config, this.logger)
     };
   }
 
@@ -67,7 +75,11 @@ export class AfipMonitorServer {
       complianceEngine: this.services.compliance,
       notificationService: this.services.notifications,
       database: this.database,
-      logger: this.logger
+      logger: this.logger,
+      ocr: this.services.ocr,
+      database: this.database,
+      logger: this.logger,
+      config: this.config
     };
 
     this.tools = {
@@ -75,7 +87,10 @@ export class AfipMonitorServer {
       getAlerts: new GetAlertsTool(toolConfigs),
       validateFiscal: new ValidateFiscalTool(toolConfigs),
       setupMonitoring: new SetupMonitoringTool(toolConfigs),
-      getUpdates: new GetUpdatesTool(toolConfigs)
+      getUpdates: new GetUpdatesTool(toolConfigs),
+      extractOCRData: new ExtractOCRDataTool(toolConfigs),
+      autoCategorizeTransactions: new AutoCategorizeTransactionsTool(toolConfigs),
+      autoBankReconciliation: new AutoBankReconciliationTool(toolConfigs)
     };
 
     // Registrar tools en el servidor MCP
@@ -147,6 +162,188 @@ export class AfipMonitorServer {
     this.httpApp.get('*', (req, res) => {
       res.sendFile(path.join(__dirname, '../client/dist/index.html'));
     });
+
+    // Upload y procesamiento de documentos
+    this.httpApp.post('/api/ocr/upload', upload.single('document'), async (req, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        const result = await this.services.ocr.processDocument(
+          req.file.path,
+          req.body.documentType || 'auto'
+        );
+
+        res.json({
+          success: true,
+          data: result,
+          processId: crypto.randomUUID()
+        });
+
+      } catch (error) {
+        this.logger.error('Error processing OCR upload:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Extraer datos de factura
+    this.httpApp.post('/api/ocr/extract-invoice', async (req, res) => {
+      try {
+        const { filePath, clientId } = req.body;
+
+        const result = await this.tools.extractOCRData.execute({
+          filePath,
+          documentType: 'invoice',
+          clientId
+        });
+
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Error extracting invoice data:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Extraer datos de extracto bancario
+    this.httpApp.post('/api/ocr/extract-bank-statement', async (req, res) => {
+      try {
+        const { filePath, clientId } = req.body;
+
+        const result = await this.tools.extractOCRData.execute({
+          filePath,
+          documentType: 'bank_statement',
+          clientId
+        });
+
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Error extracting bank statement data:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Categorización automática
+    this.httpApp.post('/api/ocr/categorize-transactions', async (req, res) => {
+      try {
+        const { transactions, clientId, options } = req.body;
+
+        const result = await this.tools.autoCategorizeTransactions.execute({
+          transactions,
+          clientId,
+          options
+        });
+
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Error categorizing transactions:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Conciliación bancaria automática
+    this.httpApp.post('/api/ocr/bank-reconciliation', async (req, res) => {
+      try {
+        const {
+          bankStatements,
+          bookRecords,
+          reconciliationPeriod,
+          clientId,
+          options
+        } = req.body;
+
+        const result = await this.tools.autoBankReconciliation.execute({
+          bankStatements,
+          bookRecords,
+          reconciliationPeriod,
+          clientId,
+          options
+        });
+
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Error in bank reconciliation:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Historial de procesamiento OCR
+    this.httpApp.get('/api/ocr/history/:clientId', async (req, res) => {
+      try {
+        const { clientId } = req.params;
+        const { page = 1, limit = 20, documentType } = req.query;
+
+        let query = `
+        SELECT * FROM ocr_processing_log 
+        WHERE client_id = ?
+      `;
+        let params = [clientId];
+
+        if (documentType) {
+          query += ' AND document_type = ?';
+          params.push(documentType);
+        }
+
+        query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
+        params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+
+        const results = await this.database.query(query, params);
+
+        res.json({
+          success: true,
+          data: results,
+          pagination: {
+            page: parseInt(page),
+            limit: parseInt(limit),
+            total: results.length
+          }
+        });
+
+      } catch (error) {
+        this.logger.error('Error fetching OCR history:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
+
+    // Estadísticas de OCR
+    this.httpApp.get('/api/ocr/stats/:clientId', async (req, res) => {
+      try {
+        const { clientId } = req.params;
+        const { period = '30' } = req.query; // días
+
+        const stats = await this.database.query(`
+        SELECT 
+          document_type,
+          status,
+          COUNT(*) as count,
+          AVG(JSON_EXTRACT(result, '$.confidence')) as avg_confidence
+        FROM ocr_processing_log 
+        WHERE client_id = ? 
+          AND created_at > DATE_SUB(NOW(), INTERVAL ? DAY)
+        GROUP BY document_type, status
+      `, [clientId, parseInt(period)]);
+
+        const totalProcessed = await this.database.query(`
+        SELECT COUNT(*) as total 
+        FROM ocr_processing_log 
+        WHERE client_id = ? 
+          AND created_at > DATE_SUB(NOW(), INTERVAL ? DAY)
+      `, [clientId, parseInt(period)]);
+
+        res.json({
+          success: true,
+          stats: {
+            byType: stats,
+            total: totalProcessed[0]?.total || 0,
+            period: `${period} días`
+          }
+        });
+
+      } catch (error) {
+        this.logger.error('Error fetching OCR stats:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
   }
 
   setupMCPHandlers() {
@@ -192,6 +389,30 @@ export class AfipMonitorServer {
             name: 'Alertas Activas',
             description: 'Alertas activas de incumplimiento',
             mimeType: 'application/json'
+          },
+          {
+            uri: 'ocr://processing-queue',
+            name: 'Cola de Procesamiento OCR',
+            description: 'Documentos en cola de procesamiento OCR',
+            mimeType: 'application/json'
+          },
+          {
+            uri: 'ocr://recent-extractions',
+            name: 'Extracciones Recientes',
+            description: 'Últimas extracciones de datos OCR realizadas',
+            mimeType: 'application/json'
+          },
+          {
+            uri: 'ocr://categorization-patterns',
+            name: 'Patrones de Categorización',
+            description: 'Patrones aprendidos para categorización automática',
+            mimeType: 'application/json'
+          },
+          {
+            uri: 'ocr://reconciliation-status',
+            name: 'Estado de Conciliaciones',
+            description: 'Estado de las conciliaciones bancarias automáticas',
+            mimeType: 'application/json'
           }
         ]
       };
@@ -221,10 +442,168 @@ export class AfipMonitorServer {
             }]
           };
 
+        case 'ocr://processing-queue':
+          const processingQueue = await this.getOCRProcessingQueue();
+          return {
+            contents: [{
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(processingQueue, null, 2)
+            }]
+          };
+
+        case 'ocr://recent-extractions':
+          const recentExtractions = await this.getRecentOCRExtractions();
+          return {
+            contents: [{
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(recentExtractions, null, 2)
+            }]
+          };
+
+        case 'ocr://categorization-patterns':
+          const patterns = await this.getCategorizationPatterns();
+          return {
+            contents: [{
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(patterns, null, 2)
+            }]
+          };
+
+        case 'ocr://reconciliation-status':
+          const reconciliationStatus = await this.getReconciliationStatus();
+          return {
+            contents: [{
+              uri,
+              mimeType: 'application/json',
+              text: JSON.stringify(reconciliationStatus, null, 2)
+            }]
+          };
+
         default:
           throw new Error(`Recurso no encontrado: ${uri}`);
       }
     });
+  }
+
+  async getOCRProcessingQueue() {
+    try {
+      const queue = await this.database.query(`
+      SELECT 
+        process_id,
+        file_path,
+        document_type,
+        status,
+        created_at,
+        updated_at
+      FROM ocr_processing_log 
+      WHERE status IN ('processing', 'queued')
+      ORDER BY created_at ASC
+      LIMIT 50
+    `);
+
+      return {
+        totalInQueue: queue.length,
+        items: queue,
+        lastUpdated: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Error getting OCR processing queue:', error);
+      return { error: error.message };
+    }
+  }
+
+  async getRecentOCRExtractions() {
+    try {
+      const extractions = await this.database.query(`
+      SELECT 
+        p.process_id,
+        p.document_type,
+        p.status,
+        p.created_at,
+        r.confidence,
+        JSON_EXTRACT(r.metadata, '$.wordsCount') as words_count
+      FROM ocr_processing_log p
+      LEFT JOIN ocr_extraction_results r ON p.process_id = r.process_id
+      WHERE p.created_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+        AND p.status = 'completed'
+      ORDER BY p.created_at DESC
+      LIMIT 20
+    `);
+
+      return {
+        totalRecent: extractions.length,
+        extractions,
+        period: '24 horas',
+        lastUpdated: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Error getting recent OCR extractions:', error);
+      return { error: error.message };
+    }
+  }
+
+  async getCategorizationPatterns() {
+    try {
+      const patterns = await this.database.query(`
+      SELECT 
+        description_pattern,
+        category,
+        COUNT(*) as frequency,
+        AVG(confidence) as avg_confidence
+      FROM categorization_history 
+      WHERE created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)
+      GROUP BY description_pattern, category
+      ORDER BY frequency DESC, avg_confidence DESC
+      LIMIT 50
+    `);
+
+      return {
+        totalPatterns: patterns.length,
+        patterns,
+        period: '30 días',
+        lastUpdated: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Error getting categorization patterns:', error);
+      return { error: error.message };
+    }
+  }
+
+  async getReconciliationStatus() {
+    try {
+      const reconciliations = await this.database.query(`
+      SELECT 
+        id,
+        client_id,
+        start_date,
+        end_date,
+        matching_rate,
+        total_discrepancy_amount,
+        created_at
+      FROM bank_reconciliations 
+      WHERE created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+      ORDER BY created_at DESC
+      LIMIT 10
+    `);
+
+      const avgMatchingRate = reconciliations.length > 0
+        ? reconciliations.reduce((sum, r) => sum + r.matching_rate, 0) / reconciliations.length
+        : 0;
+
+      return {
+        recentReconciliations: reconciliations.length,
+        averageMatchingRate: Math.round(avgMatchingRate * 100) / 100,
+        reconciliations,
+        period: '7 días',
+        lastUpdated: new Date().toISOString()
+      };
+    } catch (error) {
+      this.logger.error('Error getting reconciliation status:', error);
+      return { error: error.message };
+    }
   }
 
   async start() {
@@ -233,6 +612,7 @@ export class AfipMonitorServer {
       await this.services.afip.initialize();
       await this.services.compliance.initialize();
       await this.services.notifications.initialize();
+      await this.services.ocr.initialize();
 
       // Configurar monitoreo automático
       await this.setupAutomaticMonitoring();
@@ -262,6 +642,11 @@ export class AfipMonitorServer {
     this.logger.info('Stopping AFIP Monitor MCP Server...');
 
     try {
+      // Cleanup OCR Service
+      if (this.services.ocr) {
+        await this.services.ocr.cleanup();
+      }
+
       // Detener scheduler
       if (this.services.scheduler) {
         await this.services.scheduler.stop();
