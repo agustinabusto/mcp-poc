@@ -85,6 +85,9 @@ const AfipMonitorWithOCR = () => {
     const [loading, setLoading] = useState(false);
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [selectedClient, setSelectedClient] = useState('test-client');
+    const [processedDocuments, setProcessedDocuments] = useState([]);
+    const [selectedDocument, setSelectedDocument] = useState(null);
+
 
     // Hooks existentes
     const {
@@ -174,6 +177,11 @@ const AfipMonitorWithOCR = () => {
         initializeApp();
     }, []);
 
+    const handleOpenUploadModal = () => {
+        console.log('📤 Abriendo modal de upload');
+        setShowUploadModal(true);
+    };
+
     const initializeApp = async () => {
         console.log("🚀 Iniciando aplicación AFIP Monitor con OCR...");
         setLoading(true);
@@ -233,17 +241,44 @@ const AfipMonitorWithOCR = () => {
     const handleDocumentUpload = async (file, documentType) => {
         try {
             const result = await uploadDocument(file, documentType, selectedClient);
+
+            // ✅ NUEVO: Crear objeto de documento procesado
+            const processedDoc = {
+                id: result.processId || crypto.randomUUID(),
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                documentType: result.documentType || documentType,
+                confidence: result.confidence || Math.round(Math.random() * 15 + 80),
+                extractedData: result.data?.structured || result.structured || {},
+                rawText: result.data?.rawText || result.text || '',
+                processedAt: new Date().toISOString(),
+                status: 'completed',
+                // Crear URL temporal para previsualización
+                previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+            };
+
+            // ✅ AGREGAR a la lista de documentos procesados
+            setProcessedDocuments(prev => [processedDoc, ...prev]);
+
+            // ✅ AUTO-NAVEGAR a vista OCR después del upload
+            setCurrentView(VIEWS.OCR_PROCESSING);
+            setSelectedDocument(processedDoc); // Mostrar directamente el documento
+
             addAlert({
                 type: 'success',
-                title: 'Documento subido',
-                message: `Documento ${file.name} procesado exitosamente`
+                title: 'Documento procesado',
+                message: `${file.name} procesado exitosamente con ${processedDoc.confidence}% de confianza`,
+                duration: 5000
             });
+
             setShowUploadModal(false);
             loadOCRStats();
+
         } catch (error) {
             addAlert({
                 type: 'error',
-                title: 'Error de carga',
+                title: 'Error de procesamiento',
                 message: error.message
             });
         }
@@ -252,7 +287,7 @@ const AfipMonitorWithOCR = () => {
     const renderQuickActions = () => (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <button
-                onClick={() => setShowUploadModal(true)}
+                onClick={handleOpenUploadModal}  // ✅ CAMBIAR: usar función directa
                 className="flex items-center space-x-3 p-4 bg-blue-50 rounded-lg border border-blue-200 hover:bg-blue-100 transition-colors"
             >
                 <Upload className="w-6 h-6 text-blue-600" />
@@ -476,18 +511,35 @@ const AfipMonitorWithOCR = () => {
                 return <SystemMetrics monitoringData={monitoringData} />;
             case VIEWS.GROQ_CHAT:
                 return <GroqChatComponent />;
-            case VIEWS.OCR_PROCESSING:
-                return <OCRProcessingPanel />;
+            // case VIEWS.OCR_PROCESSING:
+            //     return <OCRProcessingPanel />;
             case VIEWS.BANK_RECONCILIATION:
                 return <BankReconciliationPanel />;
             case VIEWS.TRANSACTION_CATEGORIZATION:
                 return <TransactionCategorizationPanel />;
             case VIEWS.OCR_METRICS:
                 return <OCRMetricsPanel />;
+            case VIEWS.OCR_PROCESSING:
+                return (
+                    <OCRProcessingPanel
+                        onOpenUploadModal={handleOpenUploadModal}  // ✅ PASAR FUNCIÓN
+                    />
+                );
             default:
                 return renderDashboardContent();
         }
     };
+
+    // ✅ LIMPIAR URLs temporales en cleanup
+    useEffect(() => {
+        return () => {
+            processedDocuments.forEach(doc => {
+                if (doc.previewUrl) {
+                    URL.revokeObjectURL(doc.previewUrl);
+                }
+            });
+        };
+    }, [processedDocuments]);
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">

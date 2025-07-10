@@ -8,14 +8,22 @@ import {
     AlertCircle,
     Eye,
     Download,
-    RefreshCw
+    RefreshCw,
+    Upload,
+    Plus
 } from 'lucide-react';
 
-const OCRProcessingPanel = () => {
+const OCRProcessingPanel = ({
+    onOpenUploadModal,
+    processedDocuments = [],
+    selectedDocument,
+    onSelectDocument,
+    onBackToList
+}) => {
     const [processingQueue, setProcessingQueue] = useState([]);
     const [recentExtractions, setRecentExtractions] = useState([]);
-    const [loading, setLoading] = useState(false);
 
+    // Mock data existente
     const mockProcessingQueue = [
         {
             id: 1,
@@ -66,6 +74,17 @@ const OCRProcessingPanel = () => {
         setRecentExtractions(mockRecentExtractions);
     }, []);
 
+    // Si hay documento seleccionado, mostrar vista detallada
+    if (selectedDocument) {
+        return (
+            <DocumentDetailViewer
+                document={selectedDocument}
+                onBack={onBackToList}
+            />
+        );
+    }
+
+    // Funciones existentes
     const getStatusIcon = (status) => {
         switch (status) {
             case 'processing':
@@ -104,13 +123,23 @@ const OCRProcessingPanel = () => {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-900">Procesamiento OCR</h2>
-                <button
-                    onClick={() => window.location.reload()}
-                    className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Actualizar</span>
-                </button>
+                <div className="flex items-center space-x-3">
+                    <button
+                        onClick={onOpenUploadModal}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                    >
+                        <Plus className="w-4 h-4" />
+                        <span>Subir Documento</span>
+                    </button>
+
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        <span>Actualizar</span>
+                    </button>
+                </div>
             </div>
 
             {/* Cola de procesamiento */}
@@ -167,9 +196,21 @@ const OCRProcessingPanel = () => {
                 </div>
                 <div className="p-6">
                     {recentExtractions.length === 0 ? (
-                        <div className="text-center py-8 text-gray-500">
-                            <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                            <p>No hay extracciones recientes</p>
+                        <div className="text-center py-12">
+                            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                            <h4 className="text-lg font-medium text-gray-900 mb-2">
+                                No hay extracciones recientes
+                            </h4>
+                            <p className="text-gray-500 mb-6">
+                                Sube tu primer documento para comenzar con el procesamiento OCR
+                            </p>
+                            <button
+                                onClick={onOpenUploadModal}
+                                className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 mx-auto"
+                            >
+                                <Upload className="w-5 h-5" />
+                                <span>Subir Documento</span>
+                            </button>
                         </div>
                     ) : (
                         <div className="space-y-4">
@@ -198,7 +239,10 @@ const OCRProcessingPanel = () => {
                                         </div>
                                     </div>
                                     <div className="flex space-x-2">
-                                        <button className="p-2 text-gray-400 hover:text-blue-600">
+                                        <button
+                                            className="p-2 text-gray-400 hover:text-blue-600"
+                                            onClick={() => onSelectDocument && onSelectDocument(extraction)}
+                                        >
                                             <Eye className="w-4 h-4" />
                                         </button>
                                         <button className="p-2 text-gray-400 hover:text-green-600">
@@ -209,6 +253,43 @@ const OCRProcessingPanel = () => {
                             ))}
                         </div>
                     )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// Componente para vista detallada de documento (placeholder)
+const DocumentDetailViewer = ({ document, onBack }) => {
+    return (
+        <div className="space-y-6">
+            <div className="flex items-center justify-between">
+                <button
+                    onClick={onBack}
+                    className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
+                >
+                    <span>← Volver</span>
+                </button>
+                <h2 className="text-2xl font-bold text-gray-900">Detalle del Documento</h2>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm border p-6">
+                <h3 className="text-lg font-semibold mb-4">{document.fileName}</h3>
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <p className="text-sm text-gray-500">Tipo</p>
+                        <p className="font-medium">{document.documentType}</p>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-500">Confianza</p>
+                        <p className="font-medium">{document.confidence}%</p>
+                    </div>
+                </div>
+                <div className="mt-4">
+                    <p className="text-sm text-gray-500">Datos extraídos</p>
+                    <pre className="bg-gray-50 p-4 rounded-lg mt-2 text-sm overflow-auto">
+                        {JSON.stringify(document.extractedData, null, 2)}
+                    </pre>
                 </div>
             </div>
         </div>
