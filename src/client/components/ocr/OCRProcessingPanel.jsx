@@ -280,7 +280,7 @@ const DocumentDetailViewer = ({ document, onBack }) => {
                         <p className="text-sm text-gray-500">Tipo</p>
                         <p className="font-medium">{document.documentType}</p>
                     </div>
-                    <div>
+                    <div>CUIT Search Error in Web App
                         <p className="text-sm text-gray-500">Confianza</p>
                         <p className="font-medium">{document.confidence}%</p>
                     </div>
