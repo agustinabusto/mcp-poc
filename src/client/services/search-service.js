@@ -64,30 +64,38 @@ class SearchService {
     }
 
     /**
-     * Ejecutar búsqueda con reintentos
-     */
+ * Ejecutar búsqueda con reintentos
+ */
     async executeSearch(cuit, options) {
         const { includeCompliance, timeout, retries } = options;
         let lastError;
 
         for (let attempt = 0; attempt <= retries; attempt++) {
             try {
-                // Construir URL
-                const url = `${this.baseURL}/afip/taxpayer/${cuit}`;
+                // ✅ CAMBIO PRINCIPAL: Nueva URL para HU-001
+                const url = `${this.baseURL}/api/fiscal/verify`;
 
-                // Configurar request
+                // ✅ CAMBIO PRINCIPAL: Cambio a POST con body
                 const requestConfig = {
-                    method: 'GET',
+                    method: 'POST',
                     headers: {
                         'Accept': 'application/json',
                         'Content-Type': 'application/json'
                     },
+                    body: JSON.stringify({
+                        cuit: cuit,
+                        options: {
+                            includeHistory: false,
+                            includeCompliance: includeCompliance
+                        }
+                    }),
                     signal: AbortSignal.timeout(timeout)
                 };
 
                 console.log(`🔍 Buscando CUIT: ${cuit} (intento ${attempt + 1}/${retries + 1})`);
 
                 // Ejecutar request
+                console.log("URL ", url)
                 const response = await fetch(url, requestConfig);
 
                 if (!response.ok) {
@@ -101,8 +109,11 @@ class SearchService {
                     throw new Error(data.message || 'Error en la respuesta del servidor');
                 }
 
-                // Procesar y enriquecer datos
-                const enrichedData = await this.enrichTaxpayerData(data.data, includeCompliance);
+                // ✅ ADAPTACIÓN: Los datos ahora vienen en data.data
+                const taxpayerData = data.data;
+
+                // Procesar y enriquecer datos (mantener funcionalidad existente)
+                const enrichedData = await this.enrichTaxpayerData(taxpayerData, includeCompliance);
 
                 console.log(`✅ CUIT encontrado: ${enrichedData.razonSocial}`);
                 return enrichedData;
@@ -124,6 +135,67 @@ class SearchService {
         }
 
         throw lastError;
+    }
+
+    // =====================================================
+    // MÉTODO ADICIONAL: Agregar después del último método
+    // =====================================================
+
+    /**
+     * Obtener histórico de verificaciones para un CUIT
+     */
+    async getVerificationHistory(cuit, options = {}) {
+        try {
+            const { limit = 10, offset = 0 } = options;
+            const cleanCuit = this.cleanCuit(cuit);
+
+            const url = `${this.baseURL}/fiscal/history/${cleanCuit}?limit=${limit}&offset=${offset}`;
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data.success ? data.data : null;
+
+        } catch (error) {
+            console.warn('Error obteniendo histórico:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Obtener estadísticas del sistema fiscal
+     */
+    async getFiscalStats() {
+        try {
+            const url = `${this.baseURL}/fiscal/stats`;
+
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return data.success ? data.data : null;
+
+        } catch (error) {
+            console.warn('Error obteniendo estadísticas fiscales:', error.message);
+            return null;
+        }
     }
 
     /**
@@ -347,5 +419,7 @@ export const searchService = new SearchService();
 export const {
     searchTaxpayer,
     searchMultiple,
-    getProblematicCuits
+    getProblematicCuits,
+    getVerificationHistory,
+    getFiscalStats
 } = searchService;

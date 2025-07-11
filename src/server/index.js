@@ -10,6 +10,14 @@ import dotenv from 'dotenv';
 import axios from 'axios';
 import { mkdir } from 'fs/promises';
 
+// ==============================================
+// IMPORTACIONES ADICIONALES PARA HU-001
+// ==============================================
+
+import fiscalVerificationRoutes from './routes/fiscal-verification.js';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+
 // Cargar variables de entorno
 dotenv.config();
 
@@ -53,7 +61,9 @@ const config = {
     port: process.env.PORT || 8080,
     host: process.env.HOST || '0.0.0.0',
     cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        origin: process.env.CORS_ORIGIN
+            ? process.env.CORS_ORIGIN.split(',')
+            : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:3001'],
         credentials: true
     },
     afipMockMode: process.env.AFIP_MOCK_MODE === 'true', // || true, // Default true para POC
@@ -103,6 +113,56 @@ const logger = {
     debug: (msg, data) => process.env.NODE_ENV === 'development' && console.log(`🐛 [DEBUG] ${msg}`, data || '')
 };
 
+// Variable global para la base de datos
+let db = null;
+
+// ==============================================
+// FUNCIÓN DE INICIALIZACIÓN DE BASE DE DATOS
+// ==============================================
+async function initializeDatabase() {
+    try {
+        console.log('📊 Inicializando base de datos SQLite...');
+
+        // Asegurar que existe el directorio
+        await mkdir('data', { recursive: true });
+
+        const dbPath = process.env.DATABASE_URL || './data/afip_monitor.db';
+
+        db = await open({
+            filename: dbPath,
+            driver: sqlite3.Database
+        });
+
+        // Habilitar foreign keys y WAL mode para mejor performance
+        await db.exec('PRAGMA foreign_keys = ON');
+        await db.exec('PRAGMA journal_mode = WAL');
+        await db.exec('PRAGMA synchronous = NORMAL');
+        await db.exec('PRAGMA cache_size = 1000');
+        await db.exec('PRAGMA temp_store = memory');
+
+        console.log('✅ Base de datos inicializada correctamente');
+
+        // Verificar si existen las tablas de verificación fiscal
+        const tables = await db.all(`
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='fiscal_verifications'
+        `);
+
+        if (tables.length === 0) {
+            console.warn('⚠️  Tablas de verificación fiscal no encontradas');
+            console.warn('   Ejecuta: npm run migrate:fiscal');
+        } else {
+            console.log('✅ Tablas de verificación fiscal encontradas');
+        }
+
+        return db;
+
+    } catch (error) {
+        console.error('❌ Error inicializando base de datos:', error);
+        throw error;
+    }
+}
+
 // Inicializar Groq Client
 let groqClient = null;
 if (config.groq.apiKey) {
@@ -134,7 +194,7 @@ const notificationService = new NotificationService(notificationConfig, logger);
 notificationService.setupDefaultSubscriptions();
 
 // ==============================================
-// CREAR APLICACIÓN EXPRESS
+// CREAR APLICACIÓN EXPRESS PRIMERO
 // ==============================================
 
 const app = express();
@@ -150,6 +210,19 @@ app.use((req, res, next) => {
     logger.debug(`${timestamp} - ${req.method} ${req.path}`);
     next();
 });
+
+// ==============================================
+// INICIALIZAR BASE DE DATOS DESPUÉS DE APP
+// ==============================================
+
+try {
+    db = await initializeDatabase();
+    app.locals.db = db; // Hacer disponible para las rutas
+    logger.info('✅ Base de datos configurada y disponible para rutas');
+} catch (error) {
+    logger.error('❌ Error fatal inicializando base de datos:', error);
+    process.exit(1);
+}
 
 // Agregar servicios a app.locals para las rutas
 app.locals.groqClient = groqClient;
@@ -317,6 +390,13 @@ app.get('/', (req, res) => {
                 stats: '/api/ocr/stats/:clientId',
                 status: '/api/ocr/status/:processId',
                 info: '/api/ocr-status'
+            },
+            // Nuevos endpoints HU-001
+            fiscal: {
+                verify: '/api/fiscal/verify',
+                history: '/api/fiscal/history/:cuit',
+                stats: '/api/fiscal/stats',
+                systemStatus: '/api/fiscal-system-status'
             }
         },
         docs: 'https://github.com/snarx-io/afip-monitor-mcp',
@@ -343,6 +423,7 @@ app.get('/health', (req, res) => {
         afipMode: config.afipMockMode ? 'MOCK' : 'REAL',
         emailNotifications: notificationConfig.email.enabled,
         version: '1.0.0',
+        database: db ? 'connected' : 'disconnected',
         services: {
             groq: groqStatus,
             afip: {
@@ -428,6 +509,101 @@ app.get('/api/ocr-status', (req, res) => {
     });
 });
 
+// ==============================================
+// RUTAS DE VERIFICACIÓN FISCAL (HU-001)
+// ==============================================
+// Usar las rutas de verificación fiscal
+app.use('/api/fiscal', fiscalVerificationRoutes);
+
+// Endpoint específico para el estado del sistema de verificación fiscal
+app.get('/api/fiscal-system-status', async (req, res) => {
+    try {
+        const status = {
+            service: 'Fiscal Verification System',
+            version: '1.0.0',
+            status: 'active',
+            timestamp: new Date().toISOString(),
+
+            // Verificar conectividad con AFIP
+            afipConnection: {
+                status: afipClient?.connectionStatus || 'unknown',
+                lastCheck: new Date().toISOString(),
+                mode: config.afip.mockMode ? 'MOCK' : 'REAL'
+            },
+
+            // Verificar base de datos
+            database: {
+                status: db ? 'connected' : 'disconnected',
+                path: process.env.DATABASE_URL || './data/afip_monitor.db'
+            },
+
+            // Features implementadas según HU-001
+            features: {
+                fiscalVerification: true,           // CA-001
+                detailedInformation: true,          // CA-002  
+                errorHandling: true,                // CA-003
+                verificationHistory: !!db,         // CA-004
+                responseTimeTarget: '< 5 seconds',
+                complianceTracking: !!db
+            },
+
+            // Endpoints disponibles
+            endpoints: {
+                verify: 'POST /api/fiscal/verify',
+                history: 'GET /api/fiscal/history/:cuit',
+                stats: 'GET /api/fiscal/stats'
+            }
+        };
+
+        // Obtener estadísticas si la DB está disponible
+        if (db) {
+            try {
+                const stats = await db.get(`
+                    SELECT 
+                        COUNT(*) as total_verifications,
+                        COUNT(CASE WHEN status = 'SUCCESS' THEN 1 END) as successful,
+                        COUNT(CASE WHEN status = 'ERROR' THEN 1 END) as failed,
+                        ROUND(AVG(CASE WHEN status = 'SUCCESS' THEN response_time END)) as avg_response_time,
+                        COUNT(CASE WHEN status = 'SUCCESS' AND response_time < 5000 THEN 1 END) as ca001_compliant
+                    FROM fiscal_verifications
+                `);
+
+                status.statistics = {
+                    totalVerifications: stats.total_verifications || 0,
+                    successfulVerifications: stats.successful || 0,
+                    failedVerifications: stats.failed || 0,
+                    averageResponseTime: stats.avg_response_time || 0,
+                    ca001CompliantVerifications: stats.ca001_compliant || 0,
+                    successRate: stats.total_verifications > 0 ?
+                        ((stats.successful / stats.total_verifications) * 100).toFixed(2) : 0
+                };
+
+                // Verificar compliance con métricas de éxito de HU-001
+                status.compliance = {
+                    responseTimeTarget: status.statistics.averageResponseTime < 5000,
+                    successRateTarget: parseFloat(status.statistics.successRate) > 98,
+                    ca001Compliance: stats.total_verifications > 0 ?
+                        ((stats.ca001_compliant / stats.successful) * 100).toFixed(2) : 100
+                };
+
+            } catch (dbError) {
+                logger.warn('⚠️ Error obteniendo estadísticas de verificación:', dbError.message);
+                status.statistics = { error: 'No se pudieron obtener estadísticas' };
+            }
+        }
+
+        res.json(status);
+
+    } catch (error) {
+        logger.error('❌ Error en fiscal-system-status:', error);
+        res.status(500).json({
+            service: 'Fiscal Verification System',
+            status: 'error',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
 
 // ==============================================
 // ENDPOINTS DE NOTIFICACIONES
@@ -704,6 +880,142 @@ app.use((req, res) => {
 });
 
 // ==============================================
+// FUNCIONES DE LIMPIEZA Y MANTENIMIENTO
+// ==============================================
+
+// Función para limpiar histórico antiguo (opcional)
+async function cleanupOldVerifications() {
+    if (!db) return;
+
+    try {
+        const retentionDays = process.env.VERIFICATION_RETENTION_DAYS || 90;
+
+        const result = await db.run(`
+            DELETE FROM fiscal_verifications 
+            WHERE verification_date < datetime('now', '-${retentionDays} days')
+        `);
+
+        if (result.changes > 0) {
+            logger.info(`🧹 Limpieza automática: ${result.changes} verificaciones antiguas eliminadas`);
+        }
+
+    } catch (error) {
+        logger.error('❌ Error en limpieza automática:', error);
+    }
+}
+
+// Programar limpieza automática cada 24 horas
+if (process.env.NODE_ENV === 'production') {
+    setInterval(cleanupOldVerifications, 24 * 60 * 60 * 1000); // 24 horas
+}
+
+// ==============================================
+// ENDPOINTS DE DEBUGGING Y DESARROLLO
+// ==============================================
+
+// Solo en desarrollo: endpoints para debugging
+if (process.env.NODE_ENV === 'development') {
+
+    // Endpoint para resetear datos de prueba
+    app.post('/api/dev/reset-fiscal-data', async (req, res) => {
+        if (!db) {
+            return res.status(500).json({ error: 'Base de datos no disponible' });
+        }
+
+        try {
+            await db.run('DELETE FROM fiscal_verifications');
+
+            // Insertar datos de prueba
+            const testData = [
+                {
+                    cuit: '30500010912',
+                    status: 'SUCCESS',
+                    fiscal_data: JSON.stringify({
+                        razonSocial: 'MERCADOLIBRE S.R.L.',
+                        estado: 'ACTIVO',
+                        situacionFiscal: { iva: 'RESPONSABLE_INSCRIPTO' }
+                    }),
+                    response_time: 1250,
+                    source: 'MOCK',
+                    verification_id: 'dev_reset_001'
+                },
+                {
+                    cuit: '27230938607',
+                    status: 'SUCCESS',
+                    fiscal_data: JSON.stringify({
+                        razonSocial: 'RODRIGUEZ MARIA LAURA',
+                        estado: 'ACTIVO',
+                        situacionFiscal: { iva: 'MONOTRIBUTO' }
+                    }),
+                    response_time: 1890,
+                    source: 'MOCK',
+                    verification_id: 'dev_reset_002'
+                }
+            ];
+
+            for (const data of testData) {
+                await db.run(`
+                    INSERT INTO fiscal_verifications 
+                    (cuit, status, fiscal_data, response_time, source, verification_id)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                `, [data.cuit, data.status, data.fiscal_data, data.response_time, data.source, data.verification_id]);
+            }
+
+            logger.info('🔄 Datos de verificación fiscal reseteados con datos de prueba');
+
+            res.json({
+                success: true,
+                message: 'Datos de verificación fiscal reseteados',
+                testDataInserted: testData.length
+            });
+
+        } catch (error) {
+            logger.error('❌ Error reseteando datos:', error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Endpoint para simular carga de trabajo
+    app.post('/api/dev/simulate-load', async (req, res) => {
+        const { count = 10, delayMs = 100 } = req.body;
+
+        try {
+            logger.info(`🏃 Simulando ${count} verificaciones con delay de ${delayMs}ms`);
+
+            const results = [];
+            for (let i = 0; i < count; i++) {
+                const randomCuit = `20${Math.floor(Math.random() * 100000000).toString().padStart(8, '0')}${Math.floor(Math.random() * 10)}`;
+                const randomResponseTime = Math.floor(Math.random() * 4000) + 1000; // 1-5 segundos
+
+                if (db) {
+                    await db.run(`
+                        INSERT INTO fiscal_verifications 
+                        (cuit, status, response_time, source, verification_id)
+                        VALUES (?, ?, ?, ?, ?)
+                    `, [randomCuit, 'SUCCESS', randomResponseTime, 'SIMULATED', `sim_${Date.now()}_${i}`]);
+                }
+
+                results.push({ cuit: randomCuit, responseTime: randomResponseTime });
+
+                if (delayMs > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delayMs));
+                }
+            }
+
+            res.json({
+                success: true,
+                message: `${count} verificaciones simuladas completadas`,
+                results: results
+            });
+
+        } catch (error) {
+            logger.error('❌ Error simulando carga:', error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+}
+
+// ==============================================
 // CONFIGURAR WEBSOCKET
 // ==============================================
 
@@ -722,6 +1034,7 @@ wss.on('connection', (ws) => {
         message: `Conectado a AFIP Monitor MCP (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
         groqEnabled: !!groqClient,
         emailNotifications: notificationConfig.email.enabled,
+        fiscalVerificationEnabled: true,
         timestamp: new Date().toISOString()
     }));
 
@@ -747,6 +1060,40 @@ wss.on('connection', (ws) => {
 });
 
 // ==============================================
+// MANEJO GRACEFUL DE CIERRE
+// ==============================================
+
+async function gracefulShutdown(signal) {
+    logger.info(`📡 Señal ${signal} recibida. Iniciando cierre graceful...`);
+
+    try {
+        // Cerrar base de datos si está abierta
+        if (db) {
+            await db.close();
+            logger.info('✅ Base de datos cerrada correctamente');
+        }
+
+        // Cerrar servidor HTTP
+        if (server) {
+            server.close(() => {
+                logger.info('✅ Servidor HTTP cerrado');
+                process.exit(0);
+            });
+        } else {
+            process.exit(0);
+        }
+
+    } catch (error) {
+        logger.error('❌ Error durante cierre graceful:', error);
+        process.exit(1);
+    }
+}
+
+// Escuchar señales de cierre
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// ==============================================
 // INICIAR SERVIDOR
 // ==============================================
 await ensureUploadDirectory();
@@ -761,6 +1108,7 @@ server.listen(config.port, config.host, () => {
     console.log(`🏠 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`📡 AFIP Mode: ${config.afipMockMode ? '🎭 MOCK' : '🌐 REAL'}`);
     console.log(`📧 Email: ${notificationConfig.email.enabled ? '✅ HABILITADO' : '❌ DESHABILITADO'}`);
+    console.log(`🗄️ Database: ${db ? '✅ CONECTADA' : '❌ DESCONECTADA'}`);
 
     // Estado de Groq AI
     if (groqClient && groqClient.isInitialized) {
@@ -801,23 +1149,48 @@ server.listen(config.port, config.host, () => {
     console.log(`   • AFIP Info: http://${config.host}:${config.port}/api/afip/taxpayer/[cuit]`);
     console.log(`   • Compliance: http://${config.host}:${config.port}/api/compliance/check`);
 
-    // Nuevos endpoints OCR
+    // Endpoints OCR
     console.log(`   📄 OCR Upload: http://${config.host}:${config.port}/api/ocr/upload`);
     console.log(`   🧾 Extract Invoice: http://${config.host}:${config.port}/api/ocr/extract-invoice`);
     console.log(`   🏦 Extract Bank: http://${config.host}:${config.port}/api/ocr/extract-bank-statement`);
     console.log(`   📊 OCR Stats: http://${config.host}:${config.port}/api/ocr/stats/[clientId]`);
     console.log(`   📋 OCR History: http://${config.host}:${config.port}/api/ocr/history/[clientId]`);
 
+    // Nuevos endpoints HU-001
+    console.log(`   🎯 Fiscal Verify: http://${config.host}:${config.port}/api/fiscal/verify`);
+    console.log(`   📊 Fiscal History: http://${config.host}:${config.port}/api/fiscal/history/[cuit]`);
+    console.log(`   📈 Fiscal Stats: http://${config.host}:${config.port}/api/fiscal/stats`);
+    console.log(`   🔍 Fiscal Status: http://${config.host}:${config.port}/api/fiscal-system-status`);
+
     if (groqClient && groqClient.isInitialized) {
         console.log(`   • Chat IA: http://${config.host}:${config.port}/api/groq/chat`);
         console.log(`   • Estado IA: http://${config.host}:${config.port}/api/groq/status`);
     }
 
+    // Sistema de Verificación Fiscal (HU-001)
+    logger.info('🎯 Sistema de Verificación Fiscal (HU-001) inicializado');
+    logger.info('📋 Criterios de Aceptación configurados:');
+    logger.info('   ✅ CA-001: Verificación automática < 5 segundos');
+    logger.info('   ✅ CA-002: Información detallada de contribuyentes');
+    logger.info('   ✅ CA-003: Manejo de errores con mensajes claros');
+    logger.info(`   ${db ? '✅' : '❌'} CA-004: Histórico de verificaciones`);
+    logger.info('');
+    logger.info('📊 Métricas de Éxito objetivo:');
+    logger.info('   • Tiempo de respuesta: < 5 segundos (95% de casos)');
+    logger.info('   • Tasa de éxito: > 98%');
+    logger.info('   • Errores críticos: 0 en producción');
+    logger.info('   • Satisfacción del usuario: > 4.5/5');
+
     // Mostrar CUITs de prueba disponibles
-    console.log('🧪 CUITs de prueba disponibles:');
+    console.log('\n🧪 CUITs de prueba disponibles:');
     console.log('   • Casos normales: 30500010912, 27230938607, 20123456789');
     console.log('   • Casos problemáticos:', PROBLEMATIC_TEST_CUITS.join(', '));
     console.log('');
+    console.log('🚀 Para probar HU-001:');
+    console.log(`   curl -X POST http://${config.host}:${config.port}/api/fiscal/verify \\`);
+    console.log('     -H "Content-Type: application/json" \\');
+    console.log('     -d \'{"cuit":"30500010912"}\'');
+    console.log('');
 });
 
-export { app, server };
+export { db, app, server };

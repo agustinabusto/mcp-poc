@@ -28,7 +28,15 @@ export const API_ENDPOINTS = {
 
     // Notificaciones
     NOTIFICATIONS_SEND: '/notifications/send',
-    NOTIFICATIONS_STATS: '/notifications/stats'
+    NOTIFICATIONS_STATS: '/notifications/stats',
+
+    // ✅ AGREGAR Nuevos endpoints HU-001
+    fiscal: {
+        verify: '/fiscal/verify',
+        history: '/fiscal/history',
+        stats: '/fiscal/stats',
+        systemStatus: '/fiscal-system-status'
+    }
 };
 
 // Configuración de búsqueda

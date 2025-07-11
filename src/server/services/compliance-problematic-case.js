@@ -3,8 +3,8 @@
 // Casos de compliance problemático
 export const PROBLEMATIC_TAXPAYERS = {
     // Caso 1: Contribuyente con múltiples problemas
-    '20111222333': {
-        cuit: '20111222333',
+    '20111222334': {
+        cuit: '20111222334',
         razonSocial: 'EMPRESA PROBLEMATICA S.A.',
         estado: 'ACTIVO', // Activo pero con problemas
         situacionFiscal: {
@@ -33,8 +33,8 @@ export const PROBLEMATIC_TAXPAYERS = {
     },
 
     // Caso 2: Monotributo con recategorización pendiente
-    '27999888777': {
-        cuit: '27999888777',
+    '27999888770': {
+        cuit: '27999888770',
         razonSocial: 'GOMEZ CARLOS ALBERTO',
         estado: 'ACTIVO',
         situacionFiscal: {
@@ -70,8 +70,8 @@ export const PROBLEMATIC_TAXPAYERS = {
     },
 
     // Caso 3: Contribuyente inactivo con obligaciones pendientes
-    '30555666777': {
-        cuit: '30555666777',
+    '30555666779': {
+        cuit: '30555666779',
         razonSocial: 'SERVICIOS DISCONTINUADOS S.R.L.',
         estado: 'INACTIVO', // PROBLEMA GRAVE
         situacionFiscal: {
@@ -113,8 +113,8 @@ export const PROBLEMATIC_TAXPAYERS = {
     },
 
     // Caso 4: Responsable inscripto con problemas múltiples
-    '30777888999': {
-        cuit: '30777888999',
+    '30777888998': {
+        cuit: '30777888998',
         razonSocial: 'CONSTRUCTORA IRREGULAR S.A.',
         estado: 'ACTIVO',
         situacionFiscal: {
