@@ -21,6 +21,10 @@ import { AlertManager } from './services/alert-manager.js';
 import { ComplianceEngine } from './services/compliance-engine.js';
 import { NotificationService } from './services/notification-service.js';
 import { SchedulerService } from './services/scheduler-service.js';
+import { ARCAService } from './services/arca-service.js';
+import { ARCAFECAESolicitarTool } from './tools/arca-fecae-solicitar.js';
+import { ARCAFEParamGetTool } from './tools/arca-fe-param-get.js';
+import { ARCAFECAEConsultarTool } from './tools/arca-fecae-consultar.js';
 
 // Additional tools for advanced features - OCR
 import { OCRService } from './services/ocr-service.js';
@@ -81,7 +85,8 @@ export class AfipMonitorServer {
       compliance: new ComplianceEngine(this.config.compliance, this.logger),
       notifications: new NotificationService(this.config.notifications, this.logger),
       scheduler: new SchedulerService(this.logger),
-      ocr: new OCRService(this.config, this.logger)
+      ocr: new OCRService(this.config, this.logger),
+      arca: new ARCAService(this.config, this.logger)
     };
   }
 
@@ -96,7 +101,8 @@ export class AfipMonitorServer {
       ocr: this.services.ocr,
       database: this.database,
       logger: this.logger,
-      config: this.config
+      config: this.config,
+
     };
 
     this.tools = {
@@ -107,8 +113,12 @@ export class AfipMonitorServer {
       getUpdates: new GetUpdatesTool(toolConfigs),
       extractOCRData: new ExtractOCRDataTool(toolConfigs),
       autoCategorizeTransactions: new AutoCategorizeTransactionsTool(toolConfigs),
-      autoBankReconciliation: new AutoBankReconciliationTool(toolConfigs)
+      autoBankReconciliation: new AutoBankReconciliationTool(toolConfigs),
+      arcaFECAESolicitar: new ARCAFECAESolicitarTool({ arcaService: this.services.arca, logger: this.logger }),
+      arcaFEParamGet: new ARCAFEParamGetTool({ arcaService: this.services.arca, logger: this.logger }),
+      arcaFECAEConsultar: new ARCAFECAEConsultarTool({ arcaService: this.services.arca, logger: this.logger })
     };
+
 
     // Registrar tools en el servidor MCP
     Object.values(this.tools).forEach(tool => {
@@ -630,6 +640,7 @@ export class AfipMonitorServer {
       await this.services.compliance.initialize();
       await this.services.notifications.initialize();
       await this.services.ocr.initialize();
+      await this.services.arca.initialize();
 
       // Configurar monitoreo automático
       await this.setupAutomaticMonitoring();
