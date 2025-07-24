@@ -383,6 +383,211 @@ app.get('/api/status', (req, res) => {
 });
 
 // ==============================================
+// ENDPOINT DE ALERTAS - AGREGADO
+// ==============================================
+
+// Endpoint para obtener alertas (compatible con useMonitoring.js)
+app.get('/api/alerts', async (req, res) => {
+    try {
+        logger.info('📢 Obteniendo alertas del sistema...');
+
+        // Generar alertas mock realistas para desarrollo
+        const mockAlerts = [
+            {
+                id: `alert_${Date.now()}_1`,
+                type: 'compliance',
+                severity: 'medium',
+                title: 'Declaración de IVA Pendiente',
+                message: 'La declaración de IVA del periodo actual está próxima a vencer',
+                timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(), // 30 min ago
+                status: 'active',
+                source: 'afip_monitor',
+                taxpayer: {
+                    cuit: '20-12345678-9',
+                    name: 'Empresa Demo SA'
+                },
+                metadata: {
+                    period: '2025-07',
+                    dueDate: '2025-08-15',
+                    daysRemaining: 5
+                }
+            },
+            {
+                id: `alert_${Date.now()}_2`,
+                type: 'system',
+                severity: 'info',
+                title: 'Conexión AFIP Estable',
+                message: 'Conexión con servicios AFIP funcionando correctamente',
+                timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 min ago
+                status: 'resolved',
+                source: 'system_monitor',
+                metadata: {
+                    responseTime: '245ms',
+                    serviceStatus: 'online'
+                }
+            },
+            {
+                id: `alert_${Date.now()}_3`,
+                type: 'notification',
+                severity: 'low',
+                title: 'Actualización de Normativa',
+                message: 'Nueva resolución general AFIP disponible para revisión',
+                timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), // 2 hours ago
+                status: 'active',
+                source: 'afip_updates',
+                metadata: {
+                    resolution: 'RG 5234/2025',
+                    category: 'facturacion_electronica'
+                }
+            }
+        ];
+
+        // Si hay un sistema de alertas real, usar ese en lugar del mock
+        let alerts = mockAlerts;
+
+        // Filtros opcionales
+        const { type, severity, status, limit = 50 } = req.query;
+
+        if (type) {
+            alerts = alerts.filter(alert => alert.type === type);
+        }
+
+        if (severity) {
+            alerts = alerts.filter(alert => alert.severity === severity);
+        }
+
+        if (status) {
+            alerts = alerts.filter(alert => alert.status === status);
+        }
+
+        // Limitar resultados
+        alerts = alerts.slice(0, parseInt(limit));
+
+        // Ordenar por timestamp (más recientes primero)
+        alerts.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        const response = {
+            success: true,
+            data: alerts,
+            total: alerts.length,
+            timestamp: new Date().toISOString(),
+            filters: { type, severity, status, limit }
+        };
+
+        logger.info(`✅ Alertas obtenidas: ${alerts.length} alertas`);
+        res.json(response);
+
+    } catch (error) {
+        logger.error('❌ Error obteniendo alertas:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error obteniendo alertas del sistema',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint adicional para crear alertas manualmente (opcional)
+app.post('/api/alerts', async (req, res) => {
+    try {
+        const { type, severity, title, message, metadata } = req.body;
+
+        // Validación básica
+        if (!title || !message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Los campos title y message son requeridos'
+            });
+        }
+
+        const newAlert = {
+            id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: type || 'custom',
+            severity: severity || 'info',
+            title,
+            message,
+            timestamp: new Date().toISOString(),
+            status: 'active',
+            source: 'manual',
+            metadata: metadata || {}
+        };
+
+        // En una implementación real, guardarías esto en la base de datos
+        logger.info(`📢 Nueva alerta creada: ${newAlert.title}`);
+
+        // Notificar via WebSocket a clientes conectados
+        if (wss) {
+            wss.clients.forEach(client => {
+                if (client.readyState === client.OPEN) {
+                    client.send(JSON.stringify({
+                        type: 'new_alert',
+                        data: newAlert,
+                        timestamp: new Date().toISOString()
+                    }));
+                }
+            });
+        }
+
+        res.status(201).json({
+            success: true,
+            data: newAlert,
+            message: 'Alerta creada exitosamente',
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        logger.error('❌ Error creando alerta:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error creando alerta',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// Endpoint para marcar alertas como leídas/resueltas
+app.patch('/api/alerts/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!['active', 'resolved', 'dismissed'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Status debe ser: active, resolved, o dismissed'
+            });
+        }
+
+        // En una implementación real, actualizarías la base de datos
+        const updatedAlert = {
+            id,
+            status,
+            updatedAt: new Date().toISOString()
+        };
+
+        logger.info(`🔄 Alerta ${id} actualizada a status: ${status}`);
+
+        res.json({
+            success: true,
+            data: updatedAlert,
+            message: 'Alerta actualizada exitosamente',
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        logger.error('❌ Error actualizando alerta:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error actualizando alerta',
+            message: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
+// ==============================================
 // RUTAS DE GROQ (si está habilitado)
 // ==============================================
 
@@ -678,6 +883,8 @@ app.post('/api/demo/problematic-case', async (req, res) => {
     }
 });
 
+
+
 // ==============================================
 // MANEJO DE ERRORES
 // ==============================================
@@ -707,44 +914,268 @@ app.use((req, res) => {
 // CONFIGURAR WEBSOCKET
 // ==============================================
 
+// ==============================================
+// CONFIGURAR WEBSOCKET - VERSIÓN CORREGIDA
+// ==============================================
+
 // Crear servidor HTTP
 const server = createServer(app);
 
-// Configurar WebSocket
-const wss = new WebSocketServer({ server });
+// Configurar WebSocket con manejo de errores mejorado
+const wss = new WebSocketServer({
+    server,
+    // Configuraciones adicionales para estabilidad
+    perMessageDeflate: false,
+    maxPayload: 16 * 1024 * 1024, // 16MB
+});
 
-wss.on('connection', (ws) => {
-    logger.info('Cliente WebSocket conectado');
+// Almacenar clientes conectados
+const connectedClients = new Set();
 
-    // Enviar mensaje de bienvenida
-    ws.send(JSON.stringify({
-        type: 'welcome',
-        message: `Conectado a AFIP Monitor MCP (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
-        groqEnabled: !!groqClient,
-        emailNotifications: notificationConfig.email.enabled,
-        timestamp: new Date().toISOString()
-    }));
+wss.on('connection', (ws, req) => {
+    const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Simular alertas periódicas
-    const alertInterval = setInterval(() => {
-        if (ws.readyState === ws.OPEN) {
+    logger.info(`📡 Cliente WebSocket conectado: ${clientId}`);
+    console.log(`🔌 Nueva conexión WebSocket desde: ${req.socket.remoteAddress}`);
+
+    // Agregar cliente al set
+    connectedClients.add(ws);
+
+    // Configurar propiedades del cliente
+    ws.clientId = clientId;
+    ws.isAlive = true;
+    ws.lastPing = Date.now();
+
+    // Enviar mensaje de bienvenida inmediatamente
+    try {
+        const welcomeMessage = {
+            type: 'welcome',
+            clientId: clientId,
+            message: `Conectado a AFIP Monitor MCP (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
+            groqEnabled: !!groqClient,
+            emailNotifications: notificationConfig.email.enabled,
+            timestamp: new Date().toISOString(),
+            serverInfo: {
+                version: '1.0.0',
+                uptime: process.uptime(),
+                environment: process.env.NODE_ENV || 'development'
+            }
+        };
+
+        ws.send(JSON.stringify(welcomeMessage));
+        logger.info(`👋 Mensaje de bienvenida enviado a ${clientId}`);
+
+    } catch (error) {
+        logger.error(`❌ Error enviando mensaje de bienvenida a ${clientId}:`, error);
+    }
+
+    // Configurar ping/pong para mantener conexión viva
+    ws.on('pong', () => {
+        ws.isAlive = true;
+        ws.lastPing = Date.now();
+    });
+
+    // Manejar mensajes del cliente
+    ws.on('message', (data) => {
+        try {
+            const message = JSON.parse(data.toString());
+            logger.debug(`📨 Mensaje recibido de ${clientId}:`, message.type);
+
+            // Responder a diferentes tipos de mensajes
+            switch (message.type) {
+                case 'ping':
+                    ws.send(JSON.stringify({
+                        type: 'pong',
+                        timestamp: new Date().toISOString()
+                    }));
+                    break;
+
+                case 'subscribe':
+                    ws.subscriptions = message.channels || ['alerts', 'metrics'];
+                    ws.send(JSON.stringify({
+                        type: 'subscription_confirmed',
+                        channels: ws.subscriptions,
+                        timestamp: new Date().toISOString()
+                    }));
+                    break;
+
+                case 'get_status':
+                    ws.send(JSON.stringify({
+                        type: 'status_update',
+                        data: {
+                            server_status: 'running',
+                            afip_mode: config.afipMockMode ? 'MOCK' : 'REAL',
+                            groq_enabled: !!groqClient,
+                            connected_clients: connectedClients.size,
+                            uptime: process.uptime(),
+                            timestamp: new Date().toISOString()
+                        }
+                    }));
+                    break;
+
+                default:
+                    logger.debug(`❓ Tipo de mensaje desconocido: ${message.type}`);
+            }
+
+        } catch (error) {
+            logger.error(`❌ Error procesando mensaje de ${clientId}:`, error);
+
             ws.send(JSON.stringify({
-                type: 'alert',
-                data: {
-                    id: Date.now(),
-                    message: `Verificación automática completada (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
-                    level: 'info',
-                    timestamp: new Date().toISOString()
-                }
+                type: 'error',
+                message: 'Error procesando mensaje',
+                timestamp: new Date().toISOString()
             }));
         }
-    }, 30000); // Cada 30 segundos
+    });
 
+    // Manejar cierre de conexión
+    ws.on('close', (code, reason) => {
+        logger.info(`🔌 Cliente WebSocket desconectado: ${clientId} (código: ${code}, razón: ${reason?.toString()})`);
+        connectedClients.delete(ws);
+    });
+
+    // Manejar errores de conexión
+    ws.on('error', (error) => {
+        logger.error(`❌ Error WebSocket en ${clientId}:`, error.message);
+        connectedClients.delete(ws);
+    });
+
+    // Simular alertas periódicas mejoradas
+    const alertInterval = setInterval(() => {
+        if (ws.readyState === ws.OPEN && connectedClients.has(ws)) {
+            try {
+                const alertTypes = ['info', 'warning', 'success'];
+                const alertMessages = [
+                    'Verificación automática completada',
+                    'Sistema funcionando correctamente',
+                    'Conexión AFIP estable',
+                    'Métricas actualizadas',
+                    'Estado del servidor: OK'
+                ];
+
+                const randomAlert = {
+                    type: 'alert',
+                    data: {
+                        id: `ws_alert_${Date.now()}`,
+                        type: alertTypes[Math.floor(Math.random() * alertTypes.length)],
+                        severity: 'low',
+                        title: 'Notificación del Sistema',
+                        message: `${alertMessages[Math.floor(Math.random() * alertMessages.length)]} (${config.afipMockMode ? 'MOCK' : 'REAL'})`,
+                        timestamp: new Date().toISOString(),
+                        source: 'websocket_heartbeat'
+                    }
+                };
+
+                ws.send(JSON.stringify(randomAlert));
+                logger.debug(`📢 Alerta automática enviada a ${clientId}`);
+
+            } catch (error) {
+                logger.error(`❌ Error enviando alerta automática a ${clientId}:`, error);
+                clearInterval(alertInterval);
+            }
+        } else {
+            clearInterval(alertInterval);
+        }
+    }, 45000); // Cada 45 segundos
+
+    // Limpiar al cerrar
     ws.on('close', () => {
         clearInterval(alertInterval);
-        logger.info('Cliente WebSocket desconectado');
+        connectedClients.delete(ws);
+        logger.info(`🧹 Limpieza completada para ${clientId}`);
     });
 });
+
+// Función para broadcast a todos los clientes conectados
+const broadcastToClients = (message) => {
+    const messageString = JSON.stringify(message);
+    let sentCount = 0;
+    let errorCount = 0;
+
+    connectedClients.forEach((ws) => {
+        if (ws.readyState === ws.OPEN) {
+            try {
+                ws.send(messageString);
+                sentCount++;
+            } catch (error) {
+                logger.error(`❌ Error enviando broadcast a ${ws.clientId}:`, error);
+                errorCount++;
+                connectedClients.delete(ws);
+            }
+        } else {
+            connectedClients.delete(ws);
+        }
+    });
+
+    logger.debug(`📡 Broadcast enviado: ${sentCount} exitosos, ${errorCount} errores`);
+    return { sent: sentCount, errors: errorCount };
+};
+
+// Heartbeat para mantener conexiones vivas
+const heartbeat = setInterval(() => {
+    connectedClients.forEach((ws) => {
+        if (ws.isAlive === false) {
+            logger.warn(`💔 Cliente inactivo detectado: ${ws.clientId}`);
+            ws.terminate();
+            connectedClients.delete(ws);
+            return;
+        }
+
+        ws.isAlive = false;
+        try {
+            ws.ping();
+        } catch (error) {
+            logger.error(`❌ Error enviando ping a ${ws.clientId}:`, error);
+            connectedClients.delete(ws);
+        }
+    });
+
+    logger.debug(`💓 Heartbeat: ${connectedClients.size} clientes activos`);
+}, 30000); // Cada 30 segundos
+
+// Cleanup al cerrar servidor
+process.on('SIGTERM', () => {
+    logger.info('🛑 Cerrando servidor WebSocket...');
+    clearInterval(heartbeat);
+
+    connectedClients.forEach((ws) => {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({
+                type: 'server_shutdown',
+                message: 'Servidor cerrándose',
+                timestamp: new Date().toISOString()
+            }));
+            ws.close();
+        }
+    });
+
+    wss.close(() => {
+        logger.info('✅ Servidor WebSocket cerrado correctamente');
+    });
+});
+
+// Función helper para enviar métricas via WebSocket
+const sendMetricsUpdate = () => {
+    const metrics = {
+        type: 'metrics_update',
+        data: {
+            uptime: process.uptime(),
+            memory: process.memoryUsage(),
+            connected_clients: connectedClients.size,
+            afip_mode: config.afipMockMode ? 'MOCK' : 'REAL',
+            groq_enabled: !!groqClient,
+            timestamp: new Date().toISOString()
+        }
+    };
+
+    broadcastToClients(metrics);
+};
+
+// Enviar métricas cada 60 segundos
+setInterval(sendMetricsUpdate, 60000);
+
+// Exportar función de broadcast para usar en otras partes del servidor
+global.broadcastToClients = broadcastToClients;
 
 // ==============================================
 // INICIAR SERVIDOR

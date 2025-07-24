@@ -172,6 +172,40 @@ const AfipMonitorWithOCR = () => {
         totalInQueue: 0
     });
 
+    // ✅ SINCRONIZACIÓN DE ALERTAS: Servidor -> Hook Local
+    useEffect(() => {
+        // Sincronizar alertas del servidor con el hook local
+        if (monitoringData.alerts && monitoringData.alerts.length > 0) {
+            console.log('🔄 Sincronizando alertas del servidor:', monitoringData.alerts.length);
+
+            // Limpiar alertas locales existentes para evitar duplicados
+            clearAllAlerts();
+
+            // Agregar alertas del servidor al sistema local
+            monitoringData.alerts.forEach(serverAlert => {
+                // Transformar formato del servidor al formato local
+                const localAlert = {
+                    id: serverAlert.id || `server_${Date.now()}_${Math.random()}`,
+                    type: serverAlert.severity === 'medium' ? 'warning' :
+                        serverAlert.severity === 'low' ? 'info' :
+                            serverAlert.severity === 'high' ? 'error' : 'info',
+                    title: serverAlert.title || serverAlert.message?.split('.')[0] || 'Alert',
+                    message: serverAlert.message || 'No message provided',
+                    timestamp: serverAlert.timestamp || new Date().toISOString(),
+                    category: serverAlert.type || 'general',
+                    priority: serverAlert.severity || 'medium',
+                    source: serverAlert.source || 'server',
+                    metadata: serverAlert.metadata || {},
+                    read: false
+                };
+
+                addAlert(localAlert);
+            });
+
+            console.log('✅ Alertas sincronizadas correctamente');
+        }
+    }, [monitoringData.alerts, addAlert, clearAllAlerts]);
+
     // Inicialización
     useEffect(() => {
         initializeApp();
