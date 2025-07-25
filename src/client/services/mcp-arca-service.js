@@ -23,6 +23,388 @@ class MCPArcaService {
     }
 
     /**
+ * Obtiene las facturas enviadas en una fecha específica
+ * @param {string} date - Fecha en formato YYYY-MM-DD
+ * @returns {Promise<Array>} Lista de facturas del día
+ */
+    async getTodayInvoices(date = null) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            const targetDate = date || new Date().toISOString().split('T')[0];
+            console.log(`📋 Obteniendo facturas del día: ${targetDate}`);
+
+            // En producción, aquí harías una llamada real a la API de ARCA/base de datos
+            // Por ahora, simulamos la respuesta con datos de ejemplo
+
+            const mockInvoices = [
+                {
+                    id: `inv_${Date.now()}_1`,
+                    number: '0001-00000123',
+                    businessName: 'Tech Solutions S.A.',
+                    cuit: '30-12345678-9',
+                    total: 125000.50,
+                    type: 'A',
+                    date: new Date().toISOString(),
+                    sentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                    status: 'OK',
+                    arcaId: 'ARCA-2025-12345',
+                    arcaResponse: {
+                        cae: '75123456789012',
+                        validUntil: '2025-08-25',
+                        message: 'Factura autorizada correctamente'
+                    }
+                },
+                {
+                    id: `inv_${Date.now()}_2`,
+                    number: '0001-00000124',
+                    businessName: 'Comercial del Norte Ltda.',
+                    cuit: '33-87654321-9',
+                    total: 89750.25,
+                    type: 'B',
+                    date: new Date().toISOString(),
+                    sentAt: new Date(Date.now() - 1 * 60 * 60 * 1000).toISOString(),
+                    status: 'ERROR',
+                    errorDetails: 'CUIT del receptor no válido en AFIP',
+                    arcaResponse: {
+                        error: 'Validation Error: Invalid CUIT',
+                        errorCode: 'E001'
+                    }
+                },
+                {
+                    id: `inv_${Date.now()}_3`,
+                    number: '0001-00000125',
+                    businessName: 'Servicios Integrales SRL',
+                    cuit: '30-55555555-5',
+                    total: 45200.75,
+                    type: 'C',
+                    date: new Date().toISOString(),
+                    sentAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+                    status: 'PENDING',
+                    arcaId: 'ARCA-2025-12347',
+                    arcaResponse: {
+                        message: 'Factura en proceso de validación'
+                    }
+                },
+                {
+                    id: `inv_${Date.now()}_4`,
+                    number: '0001-00000126',
+                    businessName: 'Distribuidora Los Andes S.A.',
+                    cuit: '30-99999999-9',
+                    total: 78450.00,
+                    type: 'A',
+                    date: new Date().toISOString(),
+                    sentAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+                    status: 'OK',
+                    arcaId: 'ARCA-2025-12348',
+                    arcaResponse: {
+                        cae: '75987654321098',
+                        validUntil: '2025-08-25',
+                        message: 'Factura autorizada correctamente'
+                    }
+                },
+                {
+                    id: `inv_${Date.now()}_5`,
+                    number: '0001-00000127',
+                    businessName: 'Constructora del Sur SRL',
+                    cuit: '30-11111111-1',
+                    total: 234567.89,
+                    type: 'A',
+                    date: new Date().toISOString(),
+                    sentAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+                    status: 'ERROR',
+                    errorDetails: 'Límite de comprobantes diarios excedido',
+                    arcaResponse: {
+                        error: 'Daily invoice limit exceeded',
+                        errorCode: 'E002'
+                    }
+                }
+            ];
+
+            // Simular delay de red
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            console.log(`✅ Facturas obtenidas: ${mockInvoices.length} registros`);
+
+            return mockInvoices;
+
+        } catch (error) {
+            console.error('❌ Error obteniendo facturas del día:', error);
+            throw new Error(`Error obteniendo facturas: ${error.message}`);
+        }
+    }
+
+    /**
+     * Obtiene estadísticas de facturas para el dashboard
+     * @returns {Promise<Object>} Estadísticas de facturas
+     */
+    async getArcaStats() {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            console.log('📊 Obteniendo estadísticas ARCA...');
+
+            // En producción, esto vendría de tu base de datos o API de ARCA
+            const today = new Date().toISOString().split('T')[0];
+            const invoices = await this.getTodayInvoices(today);
+
+            // Calcular estadísticas basadas en las facturas del día
+            const stats = {
+                today: {
+                    sent: invoices.length,
+                    authorized: invoices.filter(inv => inv.status === 'OK').length,
+                    rejected: invoices.filter(inv => inv.status === 'ERROR').length,
+                    pending: invoices.filter(inv => inv.status === 'PENDING').length
+                },
+                thisMonth: {
+                    sent: Math.floor(Math.random() * 500) + 200,
+                    authorized: Math.floor(Math.random() * 450) + 180,
+                    rejected: Math.floor(Math.random() * 30) + 5,
+                    pending: Math.floor(Math.random() * 20) + 2
+                },
+                connection: {
+                    status: 'connected',
+                    lastSync: new Date().toISOString(),
+                    responseTime: Math.floor(Math.random() * 500) + 100
+                }
+            };
+
+            console.log('✅ Estadísticas ARCA obtenidas:', stats);
+            return stats;
+
+        } catch (error) {
+            console.error('❌ Error obteniendo estadísticas ARCA:', error);
+
+            // Retornar estadísticas por defecto en caso de error
+            return {
+                today: { sent: 0, authorized: 0, rejected: 0, pending: 0 },
+                thisMonth: { sent: 0, authorized: 0, rejected: 0, pending: 0 },
+                connection: {
+                    status: 'error',
+                    lastSync: null,
+                    responseTime: null
+                }
+            };
+        }
+    }
+
+    /**
+     * Reintenta el envío de una factura que falló
+     * @param {string} invoiceId - ID de la factura a reintentar
+     * @returns {Promise<Object>} Resultado del reintento
+     */
+    async retryInvoice(invoiceId) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            console.log(`🔄 Reintentando envío de factura: ${invoiceId}`);
+
+            // Simular reintento (en producción, buscar la factura y reenviarla)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Simular éxito en el 80% de los casos
+            const success = Math.random() > 0.2;
+
+            if (success) {
+                const result = {
+                    success: true,
+                    arcaId: `ARCA-RETRY-${Date.now()}`,
+                    cae: `CAE-${Math.floor(Math.random() * 100000000)}`,
+                    validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                    message: 'Factura autorizada en reintento'
+                };
+
+                console.log(`✅ Reintento exitoso para factura ${invoiceId}:`, result);
+                return result;
+            } else {
+                throw new Error('Persistencia en error de validación');
+            }
+
+        } catch (error) {
+            console.error(`❌ Error en reintento de factura ${invoiceId}:`, error);
+            throw new Error(`Reintento fallido: ${error.message}`);
+        }
+    }
+
+    /**
+     * Obtiene el detalle completo de una factura por su ID
+     * @param {string} invoiceId - ID de la factura
+     * @returns {Promise<Object>} Detalle completo de la factura
+     */
+    async getInvoiceDetail(invoiceId) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            console.log(`📄 Obteniendo detalle de factura: ${invoiceId}`);
+
+            // En producción, esto vendría de tu base de datos
+            const mockDetail = {
+                id: invoiceId,
+                number: '0001-00000123',
+                businessName: 'Tech Solutions S.A.',
+                cuit: '30-12345678-9',
+                total: 125000.50,
+                type: 'A',
+                date: new Date().toISOString(),
+                sentAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                status: 'OK',
+                arcaId: 'ARCA-2025-12345',
+                items: [
+                    {
+                        description: 'Desarrollo de software',
+                        quantity: 1,
+                        unitPrice: 103305.79,
+                        total: 103305.79,
+                        taxAmount: 21694.21
+                    }
+                ],
+                taxes: {
+                    iva21: 21694.21,
+                    total: 21694.21
+                },
+                arcaResponse: {
+                    cae: '75123456789012',
+                    validUntil: '2025-08-25',
+                    message: 'Factura autorizada correctamente',
+                    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
+                },
+                history: [
+                    {
+                        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+                        action: 'SENT_TO_ARCA',
+                        status: 'OK',
+                        message: 'Factura enviada a ARCA correctamente'
+                    },
+                    {
+                        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000 + 30000).toISOString(),
+                        action: 'ARCA_RESPONSE',
+                        status: 'OK',
+                        message: 'Respuesta recibida de ARCA - CAE autorizado'
+                    }
+                ]
+            };
+
+            // Simular delay de red
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            console.log(`✅ Detalle de factura obtenido:`, mockDetail);
+            return mockDetail;
+
+        } catch (error) {
+            console.error(`❌ Error obteniendo detalle de factura ${invoiceId}:`, error);
+            throw new Error(`Error obteniendo detalle: ${error.message}`);
+        }
+    }
+
+    /**
+     * Obtiene facturas filtradas por criterios específicos
+     * @param {Object} filters - Filtros de búsqueda
+     * @returns {Promise<Array>} Lista de facturas filtradas
+     */
+    async getFilteredInvoices(filters = {}) {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            const {
+                dateFrom,
+                dateTo,
+                status,
+                businessName,
+                invoiceNumber,
+                limit = 50,
+                offset = 0
+            } = filters;
+
+            console.log('🔍 Obteniendo facturas con filtros:', filters);
+
+            // En producción, esto sería una consulta a tu base de datos
+            let allInvoices = await this.getTodayInvoices();
+
+            // Aplicar filtros
+            let filteredInvoices = allInvoices;
+
+            if (status && status !== 'all') {
+                filteredInvoices = filteredInvoices.filter(inv => inv.status === status);
+            }
+
+            if (businessName) {
+                filteredInvoices = filteredInvoices.filter(inv =>
+                    inv.businessName.toLowerCase().includes(businessName.toLowerCase())
+                );
+            }
+
+            if (invoiceNumber) {
+                filteredInvoices = filteredInvoices.filter(inv =>
+                    inv.number.includes(invoiceNumber)
+                );
+            }
+
+            // Aplicar paginación
+            const paginatedInvoices = filteredInvoices.slice(offset, offset + limit);
+
+            const result = {
+                invoices: paginatedInvoices,
+                total: filteredInvoices.length,
+                page: Math.floor(offset / limit) + 1,
+                totalPages: Math.ceil(filteredInvoices.length / limit),
+                hasMore: (offset + limit) < filteredInvoices.length
+            };
+
+            console.log(`✅ Facturas filtradas obtenidas: ${result.invoices.length}/${result.total}`);
+            return result;
+
+        } catch (error) {
+            console.error('❌ Error obteniendo facturas filtradas:', error);
+            throw new Error(`Error en búsqueda: ${error.message}`);
+        }
+    }
+
+    /**
+     * Exporta facturas a diferentes formatos
+     * @param {Array} invoiceIds - IDs de las facturas a exportar
+     * @param {string} format - Formato de exportación ('csv', 'excel', 'pdf')
+     * @returns {Promise<Object>} Datos de exportación
+     */
+    async exportInvoices(invoiceIds, format = 'csv') {
+        if (!this.initialized) {
+            await this.initialize();
+        }
+
+        try {
+            console.log(`📤 Exportando ${invoiceIds.length} facturas en formato ${format}`);
+
+            // Simular procesamiento de exportación
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            const exportData = {
+                filename: `facturas_arca_${new Date().toISOString().split('T')[0]}.${format}`,
+                downloadUrl: `#export-${Date.now()}`, // En producción, sería una URL real
+                format: format,
+                invoiceCount: invoiceIds.length,
+                generatedAt: new Date().toISOString(),
+                size: Math.floor(Math.random() * 1024) + 512 // KB simulados
+            };
+
+            console.log(`✅ Exportación completada:`, exportData);
+            return exportData;
+
+        } catch (error) {
+            console.error('❌ Error en exportación:', error);
+            throw new Error(`Error exportando facturas: ${error.message}`);
+        }
+    }
+
+    /**
      * Envía una factura a ARCA usando el protocolo MCP
      */
     async sendInvoiceToArca(invoiceData) {
