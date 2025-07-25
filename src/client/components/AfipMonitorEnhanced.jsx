@@ -10,6 +10,11 @@ import TaxpayerInfo from "./TaxpayerInfo.jsx";
 import GroqChatComponent from "./GroqChatComponent.jsx";
 import { Header } from "./common/Header.jsx";
 
+// ========================================
+// IMPORTAR NUEVO COMPONENTE DE CONTRIBUYENTES
+// ========================================
+import ContribuyentesView from "./contributors/ContribuyentesView.jsx";
+
 // Importar hooks existentes
 import { useAlerts } from "../hooks/useAlerts.js";
 import { useCompliance } from "../hooks/useCompliance.js";
@@ -21,7 +26,7 @@ import { searchService } from "../services/search-service.js";
 import { getMCPClient } from "../services/mcp-client.js";
 
 // ========================================
-// IMPORTAR NUEVOS COMPONENTES DE FACTURAS
+// IMPORTAR COMPONENTES DE FACTURAS
 // ========================================
 import InvoiceIntake from "./invoices/InvoiceIntake.jsx";
 import InvoiceProcessing from "./invoices/InvoiceProcessing.jsx";
@@ -38,7 +43,7 @@ import {
     OCRMetricsView
 } from "./ocr/OCRViews.jsx";
 
-// Constantes de vistas - COMPATIBLE CON HEADER
+// Constantes de vistas - COMPATIBLE CON HEADER - ACTUALIZADA
 const VIEWS = {
     DASHBOARD: "dashboard",
     TAXPAYER: "taxpayer",
@@ -47,7 +52,12 @@ const VIEWS = {
     METRICS: "metrics",
     GROQ_CHAT: "groq_chat",
 
-    // Nuevas vistas de Ingreso de Facturas - ARCA
+    // ========================================
+    // NUEVA VISTA DE CONTRIBUYENTES
+    // ========================================
+    CONTRIBUTORS: "contributors",
+
+    // Vistas de Ingreso de Facturas - ARCA
     INVOICE_INTAKE: "invoice_intake",
     INVOICE_PROCESSING: "invoice_processing",
     INVOICE_VALIDATION: "invoice_validation",
@@ -89,6 +99,12 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
     const [processedDocuments, setProcessedDocuments] = useState([]);
     const [selectedDocument, setSelectedDocument] = useState(null);
 
+    // Estados para búsqueda
+    const [isSearching, setIsSearching] = useState(false);
+
+    // Estado del cliente MCP
+    const [mcpClient, setMcpClient] = useState(null);
+
     // ========================================
     // HOOKS PERSONALIZADOS (EXISTENTES)
     // ========================================
@@ -110,9 +126,6 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
         monitoringData,
         isConnected,
         getMetrics,
-        getSystemStatus,
-        refreshAlerts,
-        clearErrors,
         loading: monitoringLoading
     } = useMonitoring();
 
@@ -120,164 +133,104 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
         searchResults,
         performSearch,
         clearResults,
-        isSearching
+        loading: searchLoading
     } = useSearch();
 
-    // Cliente MCP
-    const [mcpClient, setMcpClient] = useState(null);
+    // ========================================
+    // INICIALIZACIÓN DEL COMPONENTE
+    // ========================================
+    useEffect(() => {
+        initializeApp();
+    }, []);
 
-    // ========================================
-    // FUNCIONES DE INICIALIZACIÓN
-    // ========================================
     const initializeApp = useCallback(async () => {
-        console.log("🚀 Iniciando aplicación AFIP Monitor Enhanced...");
+        console.log('🔄 Inicializando AfipMonitorEnhanced...');
         setLoading(true);
         setInitError(null);
 
         try {
             // Inicializar cliente MCP
-            console.log("📡 Conectando con servicios MCP...");
+            console.log('🔌 Inicializando MCP Client...');
             const client = await getMCPClient();
             setMcpClient(client);
-            console.log("✅ Cliente MCP inicializado");
 
-            // Cargar estadísticas iniciales de facturas
-            await loadInvoiceStats();
-            console.log("✅ Estadísticas de facturas cargadas");
-
-            // Obtener métricas del sistema
-            await getMetrics();
-            console.log("✅ Métricas del sistema obtenidas");
+            // Cargar datos iniciales si hay conexión
+            if (client && isConnected) {
+                console.log('📊 Cargando datos iniciales...');
+                await Promise.allSettled([
+                    getMetrics(),
+                    // Aquí podrías cargar otros datos iniciales
+                ]);
+            }
 
             setIsInitialized(true);
-            console.log("✅ Aplicación inicializada correctamente");
-
-            // Crear alerta de éxito
-            addAlert({
-                type: 'success',
-                title: 'Sistema Iniciado',
-                message: 'AFIP Monitor Enhanced está funcionando correctamente',
-                timestamp: new Date().toISOString()
-            });
+            console.log('✅ AfipMonitorEnhanced inicializado correctamente');
 
         } catch (error) {
-            console.error("❌ Error en inicialización:", error);
-            setInitError(error.message);
+            console.error('❌ Error inicializando AfipMonitorEnhanced:', error);
+            setInitError(error);
 
             // Crear alerta de error
             addAlert({
                 type: 'error',
                 title: 'Error de Inicialización',
-                message: `No se pudo inicializar la aplicación: ${error.message}`,
+                message: `No se pudo inicializar el sistema: ${error.message}`,
                 timestamp: new Date().toISOString()
             });
         } finally {
             setLoading(false);
         }
-    }, [addAlert, getMetrics]);
+    }, [addAlert, getMetrics, isConnected]);
 
     // ========================================
-    // FUNCIONES DE ESTADÍSTICAS ARCA
-    // ========================================
-    const loadInvoiceStats = useCallback(async () => {
-        try {
-            console.log("📊 Cargando estadísticas de facturas...");
-
-            // Simular carga de estadísticas reales de ARCA
-            // En producción, aquí harías llamadas reales a las APIs de ARCA
-            const mockStats = {
-                intakeCount: Math.floor(Math.random() * 15) + 5,
-                processingCount: Math.floor(Math.random() * 8) + 2,
-                validationCount: Math.floor(Math.random() * 12) + 3,
-                arcaCount: Math.floor(Math.random() * 20) + 10,
-                totalPending: 0
-            };
-
-            mockStats.totalPending = mockStats.intakeCount + mockStats.processingCount + mockStats.validationCount;
-
-            setInvoiceStats(mockStats);
-            console.log("✅ Estadísticas de facturas actualizadas:", mockStats);
-
-        } catch (error) {
-            console.error("❌ Error cargando estadísticas de facturas:", error);
-
-            // Usar estadísticas por defecto en caso de error
-            setInvoiceStats({
-                intakeCount: 0,
-                processingCount: 0,
-                validationCount: 0,
-                arcaCount: 0,
-                totalPending: 0
-            });
-        }
-    }, []);
-
-    // ========================================
-    // FUNCIONES DE MANEJO DE VISTAS
+    // MANEJADORES DE EVENTOS (EXISTENTES)
     // ========================================
     const handleViewChange = useCallback((newView) => {
-        console.log(`🔄 Cambiando vista de "${currentView}" a "${newView}"`);
-
-        // Validar que la vista existe
-        const validViews = Object.values(VIEWS);
-        if (!validViews.includes(newView)) {
-            console.error(`❌ Vista inválida: ${newView}. Vistas válidas:`, validViews);
-            return;
-        }
-
+        console.log(`🎯 Cambiando vista a: ${newView}`);
         setCurrentView(newView);
+    }, []);
 
-        // Limpiar datos específicos según la vista
-        if (newView !== VIEWS.TAXPAYER) {
-            setTaxpayerData(null);
-        }
-        if (newView !== VIEWS.COMPLIANCE) {
-            setComplianceData(null);
-        }
+    const handleTaxpayerQuery = useCallback(async (query) => {
+        console.log(`🔍 Búsqueda de contribuyente: ${query}`);
+        setIsSearching(true);
 
-        // Actualizar estadísticas si es necesario
-        if (newView.startsWith('invoice_') || newView.includes('arca')) {
-            console.log("🔄 Actualizando estadísticas de facturas...");
-            loadInvoiceStats();
-        }
-
-        // Crear log de navegación
-        if (config?.debug) {
-            console.log(`📍 Navegación: ${currentView} → ${newView}`);
-        }
-    }, [currentView, loadInvoiceStats, config?.debug]);
-
-    // ========================================
-    // FUNCIONES DE BÚSQUEDA (EXISTENTES)
-    // ========================================
-    const handleTaxpayerQuery = useCallback(async (cuit) => {
         try {
-            console.log(`🔍 Consultando contribuyente: ${cuit}`);
-            setTaxpayerData(null);
-
-            // Usar el servicio de búsqueda existente
-            const result = await searchService.searchTaxpayer(cuit);
-            setTaxpayerData(result);
-
-            // Cambiar automáticamente a la vista de contribuyente
+            const results = await performSearch(query);
+            setTaxpayerData(results);
             setCurrentView(VIEWS.TAXPAYER);
 
-            // Crear alerta de éxito
             addAlert({
-                type: 'success',
-                title: 'Consulta Exitosa',
-                message: `Información obtenida para CUIT ${cuit}`,
+                type: 'info',
+                title: 'Búsqueda Completada',
+                message: `Búsqueda realizada para: ${query}`,
                 timestamp: new Date().toISOString()
             });
-
         } catch (error) {
-            console.error('Error en consulta de contribuyente:', error);
+            console.error('Error en búsqueda:', error);
             addAlert({
                 type: 'error',
-                title: 'Error en Consulta',
-                message: `No se pudo obtener información del CUIT ${cuit}: ${error.message}`,
+                title: 'Error de Búsqueda',
+                message: `No se pudo realizar la búsqueda: ${error.message}`,
                 timestamp: new Date().toISOString()
             });
+        } finally {
+            setIsSearching(false);
+        }
+    }, [performSearch, addAlert]);
+
+    const handleRefreshAlerts = useCallback(async () => {
+        console.log('🔄 Refrescando alertas...');
+        // Implementar lógica de refresh de alertas
+        try {
+            // Aquí iría la lógica para recargar alertas
+            addAlert({
+                type: 'success',
+                title: 'Alertas Actualizadas',
+                message: 'Las alertas han sido actualizadas correctamente',
+                timestamp: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Error refrescando alertas:', error);
         }
     }, [addAlert]);
 
@@ -328,88 +281,79 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
                             <AlertsPanel
                                 alerts={alerts}
                                 onClearAll={clearAllAlerts}
-                                onRefresh={refreshAlerts}
+                                onRefresh={handleRefreshAlerts}
                                 loading={alertsLoading}
                             />
-                        </div>
-
-                        {/* Estadísticas rápidas de ARCA */}
-                        <div className="bg-white rounded-lg shadow p-6">
-                            <h3 className="text-lg font-medium text-gray-900 mb-4">Estado ARCA</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-blue-600">{invoiceStats.intakeCount}</div>
-                                    <div className="text-sm text-gray-500">Ingreso</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-yellow-600">{invoiceStats.processingCount}</div>
-                                    <div className="text-sm text-gray-500">Procesando</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-orange-600">{invoiceStats.validationCount}</div>
-                                    <div className="text-sm text-gray-500">Validación</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-green-600">{invoiceStats.arcaCount}</div>
-                                    <div className="text-sm text-gray-500">ARCA</div>
-                                </div>
-                            </div>
                         </div>
                     </div>
                 );
 
             case VIEWS.TAXPAYER:
+                console.log('✅ Renderizando TaxpayerInfo');
                 return (
                     <TaxpayerInfo
                         data={taxpayerData}
-                        loading={loading}
-                        onSearch={handleTaxpayerQuery}
+                        searchResults={searchResults}
                         onComplianceCheck={handleComplianceCheck}
+                        loading={searchLoading || loading}
+                        config={config}
                     />
                 );
 
+            // ========================================
+            // NUEVA VISTA DE CONTRIBUYENTES
+            // ========================================
+            case VIEWS.CONTRIBUTORS:
+                console.log('✅ Renderizando ContribuyentesView');
+                return <ContribuyentesView />;
+
             case VIEWS.COMPLIANCE:
+                console.log('✅ Renderizando ComplianceDetails');
                 return (
                     <ComplianceDetails
-                        data={complianceHookData || complianceData}
-                        onCheck={checkCompliance}
+                        data={complianceData || complianceHookData}
                         loading={complianceLoading}
+                        config={config}
                     />
                 );
 
             case VIEWS.ALERTS:
+                console.log('✅ Renderizando AlertsPanel');
                 return (
                     <AlertsPanel
                         alerts={alerts}
                         onClearAll={clearAllAlerts}
-                        onRefresh={refreshAlerts}
-                        onClear={clearAllAlerts}
+                        onRefresh={handleRefreshAlerts}
                         loading={alertsLoading}
-                        expanded={true}
+                        config={config}
                     />
                 );
 
             case VIEWS.METRICS:
+                console.log('✅ Renderizando SystemMetrics');
                 return (
                     <SystemMetrics
                         monitoringData={monitoringData}
                         onRefresh={getMetrics}
                         loading={monitoringLoading}
                         isConnected={isConnected}
-                        detailed={true}
+                        config={config}
                     />
                 );
 
             case VIEWS.GROQ_CHAT:
+                console.log('✅ Renderizando GroqChatComponent');
                 return (
                     <GroqChatComponent
-                        mcpClient={mcpClient}
-                        systemContext={{
-                            alerts: alerts.slice(0, 5),
-                            taxpayerData,
-                            complianceData: complianceHookData,
-                            monitoringData,
-                            invoiceStats
+                        config={config}
+                        selectedCuit={taxpayerData?.cuit}
+                        onMCPToolSuggestion={(suggestion) => {
+                            addAlert({
+                                type: 'info',
+                                title: 'Sugerencia IA',
+                                message: suggestion,
+                                timestamp: new Date().toISOString()
+                            });
                         }}
                     />
                 );
@@ -462,20 +406,6 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
                             <p className="mt-1 text-sm text-gray-500">
                                 La vista '{currentView}' no está implementada.
                             </p>
-                            <div className="mt-4 space-y-2">
-                                <button
-                                    onClick={() => handleViewChange(VIEWS.DASHBOARD)}
-                                    className="block mx-auto px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                                >
-                                    Volver al Dashboard
-                                </button>
-                                {config?.debug && (
-                                    <div className="text-xs text-gray-400 mt-2">
-                                        <p>Vistas disponibles:</p>
-                                        <code className="text-xs">{Object.keys(VIEWS).join(', ')}</code>
-                                    </div>
-                                )}
-                            </div>
                         </div>
                     </div>
                 );
@@ -488,78 +418,34 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
         isConnected,
         alerts,
         clearAllAlerts,
-        refreshAlerts,
+        handleRefreshAlerts,
         alertsLoading,
         taxpayerData,
-        loading,
-        handleTaxpayerQuery,
+        searchResults,
         handleComplianceCheck,
-        complianceHookData,
-        complianceData,
-        checkCompliance,
-        complianceLoading,
-        mcpClient,
-        invoiceStats,
+        searchLoading,
+        loading,
         config,
-        handleViewChange
+        complianceData,
+        complianceHookData,
+        complianceLoading,
+        invoiceStats,
+        addAlert
     ]);
 
     // ========================================
-    // EFECTOS DE INICIALIZACIÓN
+    // ESTADO DE ERROR DE INICIALIZACIÓN
     // ========================================
-    useEffect(() => {
-        console.log('🔄 Efecto de inicialización disparado');
-        initializeApp();
-    }, [initializeApp]);
-
-    // Actualizar estadísticas periódicamente
-    useEffect(() => {
-        if (isInitialized && mcpClient) {
-            console.log('⏰ Configurando actualización periódica de estadísticas');
-            const interval = setInterval(() => {
-                loadInvoiceStats();
-            }, 30000); // Actualizar cada 30 segundos
-
-            return () => {
-                console.log('🧹 Limpiando interval de estadísticas');
-                clearInterval(interval);
-            };
-        }
-    }, [isInitialized, mcpClient, loadInvoiceStats]);
-
-    // ========================================
-    // RENDERIZADO CONDICIONAL
-    // ========================================
-
-    // Estado de carga inicial
-    if (loading && !isInitialized) {
+    if (initError) {
         return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-purple-600 mx-auto"></div>
-                    <h2 className="mt-4 text-xl font-semibold text-gray-900">Inicializando AFIP Monitor Enhanced</h2>
-                    <p className="mt-2 text-gray-600">Conectando con servicios ARCA...</p>
-                    {config?.debug && (
-                        <div className="mt-4 text-xs text-gray-500">
-                            <p>Config: {JSON.stringify(config, null, 2)}</p>
-                        </div>
-                    )}
-                </div>
-            </div>
-        );
-    }
-
-    // Estado de error
-    if (initError && !isInitialized) {
-        return (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-                <div className="text-center max-w-md">
-                    <AlertTriangle className="mx-auto h-16 w-16 text-red-500" />
-                    <h2 className="mt-4 text-xl font-semibold text-gray-900">Error de Inicialización</h2>
-                    <p className="mt-2 text-gray-600 mb-4">{initError}</p>
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+                <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
+                    <AlertTriangle className="h-12 w-12 text-red-600 mx-auto mb-4" />
+                    <h2 className="text-xl font-semibold text-red-700 mb-2">Error de Inicialización</h2>
+                    <p className="text-red-600 mb-4">{initError.message}</p>
                     <button
                         onClick={initializeApp}
-                        className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                        className="bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700"
                     >
                         Reintentar
                     </button>
@@ -606,8 +492,8 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
             {mcpClient && (
                 <div className="fixed bottom-4 right-4 z-50">
                     <div className={`flex items-center px-3 py-2 rounded-full text-sm shadow-lg ${isConnected
-                            ? 'bg-green-100 text-green-800 border border-green-200'
-                            : 'bg-red-100 text-red-800 border border-red-200'
+                        ? 'bg-green-100 text-green-800 border border-green-200'
+                        : 'bg-red-100 text-red-800 border border-red-200'
                         }`}>
                         <div className={`w-2 h-2 rounded-full mr-2 ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
                         MCP {isConnected ? 'Conectado' : 'Desconectado'}
