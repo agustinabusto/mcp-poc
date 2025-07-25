@@ -1,5 +1,6 @@
 // src/client/components/ocr/OCRViews.jsx
-import React from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
+import PropTypes from 'prop-types';
 import {
     Camera,
     TrendingUp,
@@ -17,481 +18,509 @@ import {
 } from 'lucide-react';
 
 // ========================================
-// OCR Processing View
+// Constants and Types
+// ========================================
+const OCR_STATUS = {
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+    PENDING: 'pending'
+};
+
+const METRIC_TYPES = {
+    THROUGHPUT: 'throughput',
+    ACCURACY: 'accuracy',
+    SPEED: 'speed',
+    ERRORS: 'errors'
+};
+
+// ========================================
+// Custom Hooks
+// ========================================
+const useResponsiveGrid = (baseClasses = "grid gap-4") => {
+    return useMemo(() =>
+        `${baseClasses} grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4`,
+        [baseClasses]
+    );
+};
+
+const useOCRMetrics = () => {
+    const [metrics, setMetrics] = useState({
+        documentsProcessed: 156,
+        accuracy: 98.5,
+        processingQueue: 12,
+        errorRate: 1.5,
+        avgProcessingTime: 2.3,
+        dailyThroughput: 1247,
+        successRate: 98.7
+    });
+
+    const updateMetric = useCallback((key, value) => {
+        setMetrics(prev => ({ ...prev, [key]: value }));
+    }, []);
+
+    return { metrics, updateMetric };
+};
+
+// ========================================
+// Reusable Components
+// ========================================
+const MetricCard = ({
+    icon: Icon,
+    label,
+    value,
+    bgColor = "bg-blue-50",
+    textColor = "text-blue-600",
+    valueColor = "text-blue-900",
+    className = "",
+    onClick
+}) => (
+    <div
+        className={`
+            ${bgColor} rounded-lg p-4 sm:p-6 
+            ${onClick ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}
+            ${className}
+        `}
+        onClick={onClick}
+        role={onClick ? "button" : undefined}
+        tabIndex={onClick ? 0 : undefined}
+    >
+        <div className="flex items-center space-x-3 sm:space-x-4">
+            <Icon className={`h-6 w-6 sm:h-8 sm:w-8 ${textColor} flex-shrink-0`} />
+            <div className="min-w-0 flex-1">
+                <p className={`text-xs sm:text-sm font-medium ${textColor} truncate`}>
+                    {label}
+                </p>
+                <p className={`text-lg sm:text-2xl font-bold ${valueColor} mt-1`}>
+                    {value}
+                </p>
+            </div>
+        </div>
+    </div>
+);
+
+MetricCard.propTypes = {
+    icon: PropTypes.elementType.isRequired,
+    label: PropTypes.string.isRequired,
+    value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+    bgColor: PropTypes.string,
+    textColor: PropTypes.string,
+    valueColor: PropTypes.string,
+    className: PropTypes.string,
+    onClick: PropTypes.func
+};
+
+const ProgressBar = ({
+    label,
+    value,
+    target,
+    unit = "",
+    barColor = "bg-blue-500",
+    className = ""
+}) => {
+    const percentage = target ? Math.min((value / target) * 100, 100) : 0;
+
+    return (
+        <div className={`space-y-2 ${className}`}>
+            <div className="flex justify-between items-center text-xs sm:text-sm">
+                <span className="text-gray-600 font-medium">{label}</span>
+                <span className="text-gray-900 font-semibold">
+                    {value}{unit} / {target}{unit}
+                </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                    className={`${barColor} h-2 rounded-full transition-all duration-300`}
+                    style={{ width: `${percentage}%` }}
+                    role="progressbar"
+                    aria-valuenow={percentage}
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                />
+            </div>
+        </div>
+    );
+};
+
+ProgressBar.propTypes = {
+    label: PropTypes.string.isRequired,
+    value: PropTypes.number.isRequired,
+    target: PropTypes.number.isRequired,
+    unit: PropTypes.string,
+    barColor: PropTypes.string,
+    className: PropTypes.string
+};
+
+const StatusBadge = ({
+    status,
+    children,
+    className = ""
+}) => {
+    const getStatusStyles = () => {
+        switch (status) {
+            case OCR_STATUS.COMPLETED:
+                return "bg-green-100 text-green-800";
+            case OCR_STATUS.PROCESSING:
+                return "bg-yellow-100 text-yellow-800";
+            case OCR_STATUS.FAILED:
+                return "bg-red-100 text-red-800";
+            default:
+                return "bg-gray-100 text-gray-800";
+        }
+    };
+
+    return (
+        <div className={`
+            inline-flex items-center px-3 py-1 rounded-full 
+            text-xs sm:text-sm font-medium
+            ${getStatusStyles()} ${className}
+        `}>
+            {children}
+        </div>
+    );
+};
+
+StatusBadge.propTypes = {
+    status: PropTypes.oneOf(Object.values(OCR_STATUS)),
+    children: PropTypes.node.isRequired,
+    className: PropTypes.string
+};
+
+const FeatureList = ({ features, className = "" }) => (
+    <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 ${className}`}>
+        {features.map((feature, index) => (
+            <div key={index} className="flex items-start space-x-2">
+                <feature.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${feature.color} mt-0.5 flex-shrink-0`} />
+                <span className="text-xs sm:text-sm text-gray-600">{feature.text}</span>
+            </div>
+        ))}
+    </div>
+);
+
+FeatureList.propTypes = {
+    features: PropTypes.arrayOf(PropTypes.shape({
+        icon: PropTypes.elementType.isRequired,
+        color: PropTypes.string.isRequired,
+        text: PropTypes.string.isRequired
+    })).isRequired,
+    className: PropTypes.string
+};
+
+// ========================================
+// Main Components
 // ========================================
 export const OCRProcessingView = () => {
+    const { metrics } = useOCRMetrics();
+    const gridClasses = useResponsiveGrid();
+
+    const processingFeatures = [
+        { icon: CheckCircle, color: "text-green-500", text: "Reconocimiento de facturas PDF" },
+        { icon: CheckCircle, color: "text-green-500", text: "Extracción de datos estructurados" },
+        { icon: Clock, color: "text-yellow-500", text: "Validación automática de campos" },
+        { icon: Clock, color: "text-yellow-500", text: "Interfaz de corrección manual" }
+    ];
+
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Procesamiento OCR</h2>
-                <p className="text-gray-600">Estado actual del motor de reconocimiento óptico de caracteres</p>
-            </div>
-
-            {/* Estadísticas rápidas */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-blue-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <Camera className="h-8 w-8 text-blue-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-blue-600">Documentos Procesados</p>
-                            <p className="text-2xl font-bold text-blue-900">156</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-green-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <CheckCircle className="h-8 w-8 text-green-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-green-600">Precisión</p>
-                            <p className="text-2xl font-bold text-green-900">98.5%</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-yellow-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <Clock className="h-8 w-8 text-yellow-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-yellow-600">En Cola</p>
-                            <p className="text-2xl font-bold text-yellow-900">12</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-red-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <AlertCircle className="h-8 w-8 text-red-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-red-600">Errores</p>
-                            <p className="text-2xl font-bold text-red-900">3</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Estado del servicio */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Estado del Servicio OCR</h3>
-                <div className="flex items-center space-x-2 mb-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Motor OCR: Operativo</span>
-                </div>
-                <div className="flex items-center space-x-2 mb-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">API de Procesamiento: Activa</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Cola de Procesamiento: 12 documentos pendientes</span>
-                </div>
-            </div>
-
-            {/* Funcionalidad en desarrollo */}
-            <div className="text-center py-8 bg-white rounded-lg shadow">
-                <Camera className="mx-auto h-16 w-16 text-purple-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Vista Detallada en Desarrollo</h3>
-                <p className="text-gray-600 mb-4">
-                    La interfaz completa de procesamiento OCR está siendo desarrollada con las siguientes características:
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            {/* Header */}
+            <header className="mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Procesamiento OCR
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                    Estado actual del motor de reconocimiento óptico de caracteres
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto text-left">
-                    <div className="flex items-start space-x-2">
-                        <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
-                        <span className="text-sm text-gray-600">Reconocimiento de facturas PDF</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                        <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
-                        <span className="text-sm text-gray-600">Extracción de datos estructurados</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                        <Clock className="h-5 w-5 text-yellow-500 mt-0.5" />
-                        <span className="text-sm text-gray-600">Validación automática de campos</span>
-                    </div>
-                    <div className="flex items-start space-x-2">
-                        <Clock className="h-5 w-5 text-yellow-500 mt-0.5" />
-                        <span className="text-sm text-gray-600">Interfaz de corrección manual</span>
-                    </div>
-                </div>
-            </div>
+            </header>
+
+            {/* Quick Stats */}
+            <section className={`${gridClasses} mb-6`} aria-label="Estadísticas rápidas">
+                <MetricCard
+                    icon={Camera}
+                    label="Documentos Procesados"
+                    value={metrics.documentsProcessed}
+                    bgColor="bg-blue-50"
+                    textColor="text-blue-600"
+                    valueColor="text-blue-900"
+                />
+                <MetricCard
+                    icon={CheckCircle}
+                    label="Precisión"
+                    value={`${metrics.accuracy}%`}
+                    bgColor="bg-green-50"
+                    textColor="text-green-600"
+                    valueColor="text-green-900"
+                />
+                <MetricCard
+                    icon={Clock}
+                    label="En Cola"
+                    value={metrics.processingQueue}
+                    bgColor="bg-yellow-50"
+                    textColor="text-yellow-600"
+                    valueColor="text-yellow-900"
+                />
+                <MetricCard
+                    icon={AlertCircle}
+                    label="Tasa de Error"
+                    value={`${metrics.errorRate}%`}
+                    bgColor="bg-red-50"
+                    textColor="text-red-600"
+                    valueColor="text-red-900"
+                />
+            </section>
+
+            {/* Processing Status */}
+            <section className="text-center py-8 sm:py-12 bg-white rounded-lg shadow mb-6">
+                <FileText className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-blue-400 mb-4" />
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
+                    Motor OCR Optimizado para Contabilidad
+                </h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 max-w-2xl mx-auto px-4">
+                    Sistema de procesamiento de documentos contables con reconocimiento
+                    inteligente de campos y validación automática
+                </p>
+
+                <FeatureList
+                    features={processingFeatures}
+                    className="max-w-2xl mx-auto px-4"
+                />
+            </section>
         </div>
     );
 };
 
-// ========================================
-// Bank Reconciliation View
-// ========================================
 export const BankReconciliationView = () => {
+    const gridClasses = useResponsiveGrid("grid gap-4");
+
+    const reconciliationMetrics = [
+        { icon: Calculator, label: "Transacciones Conciliadas", value: 89, color: "green" },
+        { icon: RefreshCw, label: "En Proceso", value: 12, color: "yellow" },
+        { icon: AlertCircle, label: "Discrepancias", value: 3, color: "red" }
+    ];
+
+    const reconciliationFeatures = [
+        { icon: CheckCircle, color: "text-green-500", text: "Matching automático de transacciones" },
+        { icon: CheckCircle, color: "text-green-500", text: "Detección de duplicados" },
+        { icon: Clock, color: "text-yellow-500", text: "Alertas de discrepancias" },
+        { icon: Clock, color: "text-yellow-500", text: "Reportes de conciliación" }
+    ];
+
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Conciliación Bancaria</h2>
-                <p className="text-gray-600">Automatización de conciliación entre extractos bancarios y registros contables</p>
-            </div>
-
-            {/* Estadísticas de conciliación */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-green-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <Calculator className="h-8 w-8 text-green-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-green-600">Conciliados</p>
-                            <p className="text-2xl font-bold text-green-900">89%</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-yellow-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <AlertCircle className="h-8 w-8 text-yellow-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-yellow-600">Diferencias</p>
-                            <p className="text-2xl font-bold text-yellow-900">$12,500</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-blue-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <FileText className="h-8 w-8 text-blue-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-blue-600">Movimientos</p>
-                            <p className="text-2xl font-bold text-blue-900">1,247</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Últimas conciliaciones */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Últimas Conciliaciones</h3>
-                <div className="space-y-3">
-                    {[
-                        { bank: 'Banco Nación', date: '2025-07-25', status: 'completed', matches: 45, differences: 2 },
-                        { bank: 'Banco Galicia', date: '2025-07-24', status: 'pending', matches: 23, differences: 5 },
-                        { bank: 'Santander', date: '2025-07-24', status: 'completed', matches: 67, differences: 1 }
-                    ].map((reconciliation, index) => (
-                        <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                                <div className={`w-3 h-3 rounded-full ${reconciliation.status === 'completed' ? 'bg-green-500' : 'bg-yellow-500'
-                                    }`}></div>
-                                <div>
-                                    <p className="font-medium">{reconciliation.bank}</p>
-                                    <p className="text-sm text-gray-500">{reconciliation.date}</p>
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-sm font-medium">{reconciliation.matches} coincidencias</p>
-                                <p className="text-sm text-red-600">{reconciliation.differences} diferencias</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            <div className="text-center py-12 bg-white rounded-lg shadow">
-                <Calculator className="mx-auto h-16 w-16 text-green-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Conciliación Bancaria Automática</h3>
-                <p className="text-gray-600 mb-4">
-                    Sistema de conciliación inteligente para extractos bancarios
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            <header className="mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Conciliación Bancaria
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                    Automatización de conciliación entre extractos bancarios y registros contables
                 </p>
-                <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                    🏦 Integración con múltiples bancos en desarrollo
-                </div>
-            </div>
+            </header>
+
+            <section className={`${gridClasses} mb-6`}>
+                {reconciliationMetrics.map((metric, index) => (
+                    <MetricCard
+                        key={index}
+                        icon={metric.icon}
+                        label={metric.label}
+                        value={metric.value}
+                        bgColor={`bg-${metric.color}-50`}
+                        textColor={`text-${metric.color}-600`}
+                        valueColor={`text-${metric.color}-900`}
+                    />
+                ))}
+            </section>
+
+            <section className="text-center py-8 sm:py-12 bg-white rounded-lg shadow">
+                <PieChart className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-green-400 mb-4" />
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
+                    Conciliación Inteligente
+                </h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 max-w-2xl mx-auto px-4">
+                    Automatización completa del proceso de conciliación con IA para
+                    detectar patrones y anomalías
+                </p>
+
+                <FeatureList
+                    features={reconciliationFeatures}
+                    className="max-w-2xl mx-auto px-4"
+                />
+            </section>
         </div>
     );
 };
 
-// ========================================
-// Transaction Categorization View  
-// ========================================
 export const TransactionCategorizationView = () => {
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Categorización de Transacciones</h2>
-                <p className="text-gray-600">IA para clasificación automática de movimientos contables</p>
-            </div>
-
-            {/* Estadísticas de categorización */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-purple-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <PieChart className="h-8 w-8 text-purple-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-purple-600">Auto-categorizadas</p>
-                            <p className="text-2xl font-bold text-purple-900">94%</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-indigo-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <BarChart3 className="h-8 w-8 text-indigo-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-indigo-600">Confianza IA</p>
-                            <p className="text-2xl font-bold text-indigo-900">97.2%</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-teal-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <CheckCircle className="h-8 w-8 text-teal-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-teal-600">Categorías</p>
-                            <p className="text-2xl font-bold text-teal-900">28</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-orange-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <Clock className="h-8 w-8 text-orange-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-orange-600">Pendientes</p>
-                            <p className="text-2xl font-bold text-orange-900">47</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Categorías principales */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Categorías Más Utilizadas</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {[
-                        { name: 'Gastos Operativos', count: 234, color: 'bg-blue-100 text-blue-800' },
-                        { name: 'Compras', count: 189, color: 'bg-green-100 text-green-800' },
-                        { name: 'Servicios', count: 156, color: 'bg-purple-100 text-purple-800' },
-                        { name: 'Impuestos', count: 98, color: 'bg-red-100 text-red-800' }
-                    ].map((category, index) => (
-                        <div key={index} className="text-center">
-                            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${category.color}`}>
-                                {category.name}
-                            </div>
-                            <p className="text-sm text-gray-500 mt-1">{category.count} transacciones</p>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Rendimiento de la IA */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Rendimiento del Modelo IA</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg">
-                        <Target className="mx-auto h-8 w-8 text-purple-600 mb-2" />
-                        <p className="text-2xl font-bold text-purple-900">97.2%</p>
-                        <p className="text-sm text-purple-600">Precisión</p>
-                    </div>
-                    <div className="text-center p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg">
-                        <Activity className="mx-auto h-8 w-8 text-blue-600 mb-2" />
-                        <p className="text-2xl font-bold text-blue-900">95.8%</p>
-                        <p className="text-sm text-blue-600">Recall</p>
-                    </div>
-                    <div className="text-center p-4 bg-gradient-to-r from-green-50 to-teal-50 rounded-lg">
-                        <Zap className="mx-auto h-8 w-8 text-green-600 mb-2" />
-                        <p className="text-2xl font-bold text-green-900">96.5%</p>
-                        <p className="text-sm text-green-600">F1-Score</p>
-                    </div>
-                </div>
-            </div>
-
-            <div className="text-center py-12 bg-white rounded-lg shadow">
-                <div className="mx-auto h-16 w-16 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full flex items-center justify-center mb-4">
-                    <span className="text-3xl">🤖</span>
-                </div>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">IA de Categorización Avanzada</h3>
-                <p className="text-gray-600 mb-4">
-                    Machine Learning para clasificación automática de transacciones contables
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            <header className="mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Categorización de Transacciones
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                    Clasificación automática de transacciones usando machine learning
                 </p>
-                <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-                    🧠 Entrenamiento continuo con patrones contables
+            </header>
+
+            <section className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h4 className="font-semibold text-gray-900 mb-4">Precisión por Categoría</h4>
+                    <div className="space-y-4">
+                        <ProgressBar
+                            label="Gastos Operativos"
+                            value={95}
+                            target={100}
+                            unit="%"
+                            barColor="bg-blue-500"
+                        />
+                        <ProgressBar
+                            label="Ingresos"
+                            value={98}
+                            target={100}
+                            unit="%"
+                            barColor="bg-green-500"
+                        />
+                        <ProgressBar
+                            label="Gastos Financieros"
+                            value={92}
+                            target={100}
+                            unit="%"
+                            barColor="bg-purple-500"
+                        />
+                    </div>
                 </div>
-            </div>
+
+                <div className="bg-white rounded-lg shadow p-6">
+                    <h4 className="font-semibold text-gray-900 mb-4">Velocidad de Procesamiento</h4>
+                    <div className="space-y-4">
+                        <ProgressBar
+                            label="Velocidad actual"
+                            value={1.8}
+                            target={2.3}
+                            unit="s"
+                            barColor="bg-green-500"
+                        />
+                        <ProgressBar
+                            label="Velocidad objetivo"
+                            value={2.0}
+                            target={2.3}
+                            unit="s"
+                            barColor="bg-yellow-500"
+                        />
+                    </div>
+                </div>
+            </section>
+
+            <section className="text-center py-8 sm:py-12 bg-white rounded-lg shadow">
+                <Activity className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-purple-400 mb-4" />
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
+                    IA Contable Especializada
+                </h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 max-w-2xl mx-auto px-4">
+                    Modelo de machine learning entrenado específicamente para
+                    transacciones contables argentinas
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl mx-auto px-4">
+                    <StatusBadge status={OCR_STATUS.COMPLETED}>
+                        🎯 Clasificación automática por contexto
+                    </StatusBadge>
+                    <StatusBadge status={OCR_STATUS.COMPLETED}>
+                        📊 Análisis de patrones históricos
+                    </StatusBadge>
+                    <StatusBadge status={OCR_STATUS.PROCESSING}>
+                        🧮 Detección de anomalías contables
+                    </StatusBadge>
+                    <StatusBadge status={OCR_STATUS.PROCESSING}>
+                        🧠 Entrenamiento continuo con patrones contables
+                    </StatusBadge>
+                </div>
+            </section>
         </div>
     );
 };
 
-// ========================================
-// OCR Metrics View
-// ========================================
 export const OCRMetricsView = () => {
+    const { metrics } = useOCRMetrics();
+    const gridClasses = useResponsiveGrid();
+
+    const advancedFeatures = [
+        { icon: CheckCircle, color: "text-indigo-500", text: "📊 Dashboards interactivos" },
+        { icon: CheckCircle, color: "text-green-500", text: "📈 Alertas de rendimiento" },
+        { icon: Clock, color: "text-purple-500", text: "🔍 Análisis de errores" },
+        { icon: Clock, color: "text-blue-500", text: "⚡ Optimización automática" }
+    ];
+
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">Métricas OCR</h2>
-                <p className="text-gray-600">Dashboard de rendimiento y estadísticas del sistema OCR</p>
-            </div>
+        <div className="p-4 sm:p-6 max-w-7xl mx-auto">
+            <header className="mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-2">
+                    Métricas OCR
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600">
+                    Dashboard de rendimiento y estadísticas del sistema OCR
+                </p>
+            </header>
 
-            {/* Métricas principales */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-indigo-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <TrendingUp className="h-8 w-8 text-indigo-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-indigo-600">Throughput Diario</p>
-                            <p className="text-2xl font-bold text-indigo-900">1,247</p>
-                        </div>
-                    </div>
-                </div>
+            <section className={`${gridClasses} mb-6`}>
+                <MetricCard
+                    icon={TrendingUp}
+                    label="Throughput Diario"
+                    value={metrics.dailyThroughput.toLocaleString()}
+                    bgColor="bg-indigo-50"
+                    textColor="text-indigo-600"
+                    valueColor="text-indigo-900"
+                />
+                <MetricCard
+                    icon={BarChart3}
+                    label="Tiempo Promedio"
+                    value={`${metrics.avgProcessingTime}s`}
+                    bgColor="bg-emerald-50"
+                    textColor="text-emerald-600"
+                    valueColor="text-emerald-900"
+                />
+                <MetricCard
+                    icon={CheckCircle}
+                    label="Éxito Total"
+                    value={`${metrics.successRate}%`}
+                    bgColor="bg-cyan-50"
+                    textColor="text-cyan-600"
+                    valueColor="text-cyan-900"
+                />
+                <MetricCard
+                    icon={AlertCircle}
+                    label="Errores Detectados"
+                    value="24h"
+                    bgColor="bg-amber-50"
+                    textColor="text-amber-600"
+                    valueColor="text-amber-900"
+                />
+            </section>
 
-                <div className="bg-emerald-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <BarChart3 className="h-8 w-8 text-emerald-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-emerald-600">Tiempo Promedio</p>
-                            <p className="text-2xl font-bold text-emerald-900">2.3s</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-cyan-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <CheckCircle className="h-8 w-8 text-cyan-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-cyan-600">Éxito Total</p>
-                            <p className="text-2xl font-bold text-cyan-900">98.7%</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-amber-50 rounded-lg p-6">
-                    <div className="flex items-center">
-                        <AlertCircle className="h-8 w-8 text-amber-600" />
-                        <div className="ml-4">
-                            <p className="text-sm font-medium text-amber-600">Errores</p>
-                            <p className="text-2xl font-bold text-amber-900">1.3%</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Gráfico de rendimiento semanal */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Rendimiento Semanal</h3>
-                <div className="h-64 flex items-center justify-center border-2 border-dashed border-gray-300 rounded-lg">
-                    <div className="text-center">
-                        <TrendingUp className="mx-auto h-12 w-12 text-gray-400 mb-2" />
-                        <p className="text-gray-500">Gráfico de métricas en desarrollo</p>
-                        <p className="text-sm text-gray-400">Integración con Chart.js en progreso</p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Métricas por tipo de documento */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Precisión por Tipo de Documento</h3>
-                <div className="space-y-4">
-                    {[
-                        { type: 'Facturas A', processed: 456, accuracy: 99.2, color: 'bg-green-500' },
-                        { type: 'Facturas B', processed: 334, accuracy: 98.8, color: 'bg-blue-500' },
-                        { type: 'Facturas C', processed: 289, accuracy: 97.5, color: 'bg-purple-500' },
-                        { type: 'Recibos', processed: 168, accuracy: 96.3, color: 'bg-orange-500' }
-                    ].map((doc, index) => (
-                        <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                            <div className="flex items-center space-x-3">
-                                <div className={`w-3 h-3 rounded-full ${doc.color}`}></div>
-                                <div>
-                                    <p className="font-medium">{doc.type}</p>
-                                    <p className="text-sm text-gray-500">{doc.processed} documentos procesados</p>
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-lg font-bold text-gray-900">{doc.accuracy}%</p>
-                                <p className="text-sm text-gray-500">precisión</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Tendencias de rendimiento */}
-            <div className="bg-white rounded-lg shadow p-6 mb-6">
-                <h3 className="text-lg font-medium mb-4">Tendencias de Rendimiento</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <h4 className="text-sm font-medium text-gray-700 mb-3">Mejoras del Mes</h4>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Velocidad de procesamiento</span>
-                                <span className="text-sm font-medium text-green-600">+15%</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Precisión OCR</span>
-                                <span className="text-sm font-medium text-green-600">+2.3%</span>
-                            </div>
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-gray-600">Reducción de errores</span>
-                                <span className="text-sm font-medium text-green-600">-0.8%</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="text-sm font-medium text-gray-700 mb-3">Objetivos del Mes</h4>
-                        <div className="space-y-3">
-                            <div>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-gray-600">Precisión objetivo: 99%</span>
-                                    <span className="text-gray-900">98.7%</span>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div className="bg-indigo-600 h-2 rounded-full" style={{ width: '98.7%' }}></div>
-                                </div>
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-gray-600">Velocidad objetivo: </span>
-                                    <span className="text-gray-900">2.3s</span>
-                                </div>
-                                <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div className="bg-yellow-500 h-2 rounded-full" style={{ width: '85%' }}></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Estado del sistema */}
-            <div className="text-center py-12 bg-white rounded-lg shadow">
-                <TrendingUp className="mx-auto h-16 w-16 text-indigo-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Analytics y Métricas Avanzadas</h3>
-                <p className="text-gray-600 mb-4">
+            <section className="text-center py-8 sm:py-12 bg-white rounded-lg shadow">
+                <TrendingUp className="mx-auto h-12 w-12 sm:h-16 sm:w-16 text-indigo-400 mb-4" />
+                <h3 className="text-base sm:text-lg font-medium text-gray-900 mb-2">
+                    Analytics y Métricas Avanzadas
+                </h3>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 max-w-2xl mx-auto px-4">
                     Dashboard completo de análisis de rendimiento OCR en desarrollo
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto">
-                    <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800">
-                        📊 Dashboards interactivos
-                    </div>
-                    <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-green-100 text-green-800">
-                        📈 Alertas de rendimiento
-                    </div>
-                    <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
-                        🔍 Análisis de errores
-                    </div>
-                    <div className="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
-                        ⚡ Optimización automática
-                    </div>
-                </div>
-            </div>
+
+                <FeatureList
+                    features={advancedFeatures}
+                    className="max-w-2xl mx-auto px-4"
+                />
+            </section>
         </div>
     );
 };
 
-// Exportar todos los componentes como named exports
-export {
+// ========================================
+// Exports
+// ========================================
+export const OCRViews = {
     OCRProcessingView,
     BankReconciliationView,
     TransactionCategorizationView,
     OCRMetricsView
 };
 
-// También exportar como default si se necesita
-export default {
-    OCRProcessingView,
-    BankReconciliationView,
-    TransactionCategorizationView,
-    OCRMetricsView
-};
+export default OCRViews;
