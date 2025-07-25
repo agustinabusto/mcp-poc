@@ -1,7 +1,8 @@
 // src/client/main.jsx - Versión actualizada con OCR
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import AfipMonitorWithOCR from './components/AfipMonitorWithOCR.jsx';
+//import AfipMonitorWithOCR from './components/AfipMonitorWithOCR.jsx';
+import AfipMonitorEnhanced from './components/AfipMonitorEnhanced.jsx';
 import './index.css';
 
 // Configuración de la aplicación
@@ -176,7 +177,8 @@ const initializeApp = async () => {
     // Renderizar aplicación
     ReactDOM.createRoot(document.getElementById('root')).render(
       <React.StrictMode>
-        <AfipMonitorWithOCR config={config} />
+        {/* <AfipMonitorWithOCR config={config} /> */}
+        <AfipMonitorEnhanced config={config} />
       </React.StrictMode>
     );
 

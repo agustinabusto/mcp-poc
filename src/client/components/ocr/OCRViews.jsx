@@ -442,7 +442,7 @@ export const OCRMetricsView = () => {
                             </div>
                             <div>
                                 <div className="flex justify-between text-sm mb-1">
-                                    <span className="text-gray-600">Velocidad objetivo: <2s</span>
+                                    <span className="text-gray-600">Velocidad objetivo: </span>
                                     <span className="text-gray-900">2.3s</span>
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2">
