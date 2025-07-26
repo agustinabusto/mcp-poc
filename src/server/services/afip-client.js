@@ -8,10 +8,18 @@ export class AfipClient extends EventEmitter {
     this.config = config;
     this.logger = logger;
     // URL CORREGIDA - API REST oficial de AFIP
-    this.baseURL = config.baseURL || 'https://soa.afip.gob.ar/sr-padron/v2';
-    this.timeout = config.timeout || 30000;
+    // this.baseURL = config.baseURL || 'https://soa.afip.gob.ar/sr-padron/v2';
+    // this.timeout = config.timeout || 30000;
     this.maxRetries = config.maxRetries || 3;
+    // this.mockMode = config.mockMode || false;
+
+    this.baseURL = config.baseURL || 'https://awshomo.afip.gov.ar/sr-padron/v2/persona';
+    this.timeout = config.timeout || 30000;
+    this.retryAttempts = config.retryAttempts || 3;
+    this.retryDelay = config.retryDelay || 1000;
     this.mockMode = config.mockMode || false;
+    this.connectionStatus = 'unknown';
+    this.lastHealthCheck = null;
 
     // Cliente HTTP configurado
     this.httpClient = axios.create({
@@ -298,95 +306,102 @@ export class AfipClient extends EventEmitter {
   }
 
   // MÉTODO HEALTHCHECK CORREGIDO - SIN /ping
+  /**
+     * Health check del servicio AFIP
+     */
   async healthCheck() {
+    const startTime = Date.now();
+
     try {
-      const startTime = Date.now();
-
       if (this.mockMode) {
-        // En modo mock, simular health check exitoso SIEMPRE
-        await this.delay(50 + Math.random() * 100);
-        this.logger.debug('🎭 Health check en modo MOCK - simulando éxito');
+        // En modo mock, siempre retornar saludable
+        this.connectionStatus = 'connected';
+        this.lastHealthCheck = new Date().toISOString();
 
-        const result = {
-          healthy: true,
-          status: 200,
+        return {
+          success: true,
           responseTime: Date.now() - startTime,
-          mockMode: true,
-          timestamp: new Date().toISOString(),
-          message: 'Mock mode - health check simulado exitosamente'
+          timestamp: this.lastHealthCheck,
+          mode: 'mock'
         };
-
-        this.lastHealthCheck = result;
-        return result;
       }
 
-      // En modo real, verificar conectividad con un CUIT de prueba
-      // IMPORTANTE: No usar /ping porque no existe en AFIP
-      try {
-        // Usar un CUIT de prueba conocido para verificar que el servicio responde
-        const testCuit = '30500010912'; // CUIT de prueba oficial de AFIP
+      // En modo real, hacer una petición simple a AFIP
+      const response = await fetch(this.baseURL.replace('/persona', ''), {
+        method: 'HEAD',
+        timeout: 5000
+      });
 
-        const response = await this.httpClient.get(`/persona/${testCuit}`, {
-          timeout: 10000,
-          _skipRetry: true,
-          validateStatus: function (status) {
-            // 200 = OK, 404 = CUIT no encontrado pero servicio funciona
-            // 401 = No autorizado pero servicio está up
-            return status === 200 || status === 404 || status === 401;
-          }
-        });
+      const responseTime = Date.now() - startTime;
+      const isHealthy = response.status < 500;
 
-        const result = {
-          healthy: true,
-          status: response.status,
-          responseTime: Date.now() - startTime,
-          timestamp: new Date().toISOString(),
-          message: `AFIP REST API responding (status: ${response.status})`,
-          testCuit: testCuit
-        };
+      this.connectionStatus = isHealthy ? 'connected' : 'degraded';
+      this.lastHealthCheck = new Date().toISOString();
 
-        this.lastHealthCheck = result;
-        this.logger.debug('✅ Health check AFIP REST exitoso:', result);
-        return result;
-
-      } catch (error) {
-        // Verificar si el error es de conectividad o de respuesta HTTP
-        if (error.code === 'ECONNREFUSED' ||
-          error.code === 'ETIMEDOUT' ||
-          error.code === 'ENOTFOUND' ||
-          error.code === 'ERR_NETWORK') {
-
-          // Error de conectividad - servicio no disponible
-          throw new Error(`AFIP service unavailable: ${error.message}`);
-        }
-
-        // Si es un error HTTP pero el servidor responde, considerarlo como healthy
-        const result = {
-          healthy: true,
-          status: error.response?.status || 0,
-          responseTime: Date.now() - startTime,
-          timestamp: new Date().toISOString(),
-          message: 'AFIP server responding (with HTTP error)',
-          warning: error.message
-        };
-
-        this.lastHealthCheck = result;
-        this.logger.debug('⚠️ Health check AFIP con warning:', result);
-        return result;
-      }
-
-    } catch (error) {
-      const result = {
-        healthy: false,
-        error: error.message,
-        status: error.response?.status,
-        timestamp: new Date().toISOString(),
-        message: `AFIP health check failed: ${error.message}`
+      return {
+        success: isHealthy,
+        responseTime: responseTime,
+        timestamp: this.lastHealthCheck,
+        status: response.status,
+        mode: 'real'
       };
 
-      this.lastHealthCheck = result;
-      this.logger.warn('❌ Health check AFIP falló:', result);
-      return result;
+    } catch (error) {
+      this.connectionStatus = 'error';
+      this.lastHealthCheck = new Date().toISOString();
+
+      return {
+        success: false,
+        responseTime: Date.now() - startTime,
+        timestamp: this.lastHealthCheck,
+        error: error.message,
+        mode: this.mockMode ? 'mock' : 'real'
+      };
+    }
+  }
+
+  /**
+   * Obtener información de contribuyente
+   */
+  async getTaxpayerInfo(cuit) {
+    try {
+      if (this.mockMode) {
+        // Retornar datos mock
+        return {
+          success: true,
+          data: {
+            cuit: cuit,
+            razonSocial: `Contribuyente Mock ${cuit}`,
+            situacionAfip: 'activo',
+            categoria: 'responsable_inscripto',
+            direccion: 'Dirección Mock',
+            fechaConsulta: new Date().toISOString()
+          }
+        };
+      }
+
+      // Lógica real para consultar AFIP
+      const response = await fetch(`${this.baseURL}/${cuit}`, {
+        timeout: this.timeout
+      });
+
+      if (!response.ok) {
+        throw new Error(`AFIP API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      return {
+        success: true,
+        data: data
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: error.message,
+        cuit: cuit
+      };
     }
   }
 

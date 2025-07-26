@@ -467,4 +467,138 @@ export class ValidationService {
 
         return data;
     }
+
+    /**
+     * Validar email
+     */
+    static isValidEmail(email) {
+        if (!email) return true; // Email es opcional
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    /**
+     * Validar teléfono
+     */
+    static isValidPhone(phone) {
+        if (!phone) return true; // Teléfono es opcional
+
+        const phoneRegex = /^[\+]?[0-9\-\(\)\s]+$/;
+        return phoneRegex.test(phone) && phone.replace(/\D/g, '').length >= 8;
+    }
+
+    /**
+     * Sanitizar string
+     */
+    static sanitizeString(str) {
+        if (!str) return str;
+
+        return str
+            .trim()
+            .replace(/[<>]/g, '') // Remover caracteres peligrosos básicos
+            .substring(0, 1000); // Limitar longitud
+    }
+
+    /**
+     * Validar razón social
+     */
+    static isValidRazonSocial(razonSocial) {
+        if (!razonSocial) return false;
+
+        const sanitized = ValidationService.sanitizeString(razonSocial);
+        return sanitized.length >= 2 && sanitized.length <= 200;
+    }
+
+    /**
+     * Validar categoría AFIP
+     */
+    static isValidCategoria(categoria) {
+        const validCategories = [
+            'responsable_inscripto',
+            'monotributo',
+            'exento',
+            'no_categorizado'
+        ];
+
+        return !categoria || validCategories.includes(categoria);
+    }
+
+    /**
+     * Validar situación AFIP
+     */
+    static isValidSituacionAfip(situacion) {
+        const validSituations = [
+            'activo',
+            'dado_de_baja',
+            'suspendido',
+            'no_inscripto'
+        ];
+
+        return !situacion || validSituations.includes(situacion);
+    }
+
+    /**
+     * Validar array de tags
+     */
+    static isValidTags(tags) {
+        if (!tags) return true;
+
+        if (!Array.isArray(tags)) return false;
+
+        if (tags.length > 20) return false; // Máximo 20 tags
+
+        return tags.every(tag =>
+            typeof tag === 'string' &&
+            tag.trim().length > 0 &&
+            tag.trim().length <= 50
+        );
+    }
+
+    /**
+     * Validar objeto completo de contribuyente
+     */
+    static validateContributor(contributorData) {
+        const errors = [];
+
+        // Validaciones obligatorias
+        if (!contributorData.cuit) {
+            errors.push('CUIT es obligatorio');
+        }
+
+        if (!contributorData.razonSocial) {
+            errors.push('Razón social es obligatoria');
+        } else if (!ValidationService.isValidRazonSocial(contributorData.razonSocial)) {
+            errors.push('Razón social debe tener entre 2 y 200 caracteres');
+        }
+
+        // Validaciones opcionales
+        if (contributorData.email && !ValidationService.isValidEmail(contributorData.email)) {
+            errors.push('Email debe ser válido');
+        }
+
+        if (contributorData.telefono && !ValidationService.isValidPhone(contributorData.telefono)) {
+            errors.push('Teléfono debe ser válido');
+        }
+
+        if (!ValidationService.isValidCategoria(contributorData.categoria)) {
+            errors.push('Categoría debe ser válida');
+        }
+
+        if (!ValidationService.isValidSituacionAfip(contributorData.situacionAfip)) {
+            errors.push('Situación AFIP debe ser válida');
+        }
+
+        if (!ValidationService.isValidTags(contributorData.tags)) {
+            errors.push('Tags debe ser un array válido');
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors
+        };
+    }
 }
+
+// Inicializar cache service al importar
+CacheService.initialize();

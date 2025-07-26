@@ -18,6 +18,9 @@ export class GroqClient extends EventEmitter {
         this.temperature = config.groqTemperature || parseFloat(process.env.GROQ_TEMPERATURE) || 0.7;
         this.timeout = config.groqTimeout || parseInt(process.env.GROQ_TIMEOUT) || 30000;
 
+        this.isInitialized = false;
+        this.lastHealthCheck = null;
+
         // Métricas y estado
         this.metrics = {
             requestCount: 0,
@@ -45,6 +48,79 @@ export class GroqClient extends EventEmitter {
             this.logger.error('Error conectando con Groq:', error);
             this.emit('error', error);
             throw error;
+        }
+    }
+
+    /**
+     * Health check del servicio Groq
+     */
+    async healthCheck() {
+        const startTime = Date.now();
+
+        try {
+            if (!this.isInitialized) {
+                return {
+                    isHealthy: false,
+                    error: 'Client not initialized',
+                    timestamp: new Date().toISOString(),
+                    responseTime: Date.now() - startTime
+                };
+            }
+
+            if (!this.apiKey) {
+                return {
+                    isHealthy: false,
+                    error: 'No API key configured',
+                    timestamp: new Date().toISOString(),
+                    responseTime: Date.now() - startTime
+                };
+            }
+
+            // En un cliente real, harías una petición simple a la API
+            // Por ahora, simular que está saludable si está inicializado
+            this.lastHealthCheck = new Date().toISOString();
+
+            return {
+                isHealthy: true,
+                model: this.model,
+                timestamp: this.lastHealthCheck,
+                responseTime: Date.now() - startTime
+            };
+
+        } catch (error) {
+            this.lastHealthCheck = new Date().toISOString();
+
+            return {
+                isHealthy: false,
+                error: error.message,
+                timestamp: this.lastHealthCheck,
+                responseTime: Date.now() - startTime
+            };
+        }
+    }
+
+    /**
+    * Enviar mensaje al chat
+    */
+    async chat(messages, options = {}) {
+        try {
+            if (!this.isInitialized) {
+                throw new Error('Groq client not initialized');
+            }
+
+            // Simular respuesta de chat
+            return {
+                success: true,
+                response: 'Esta es una respuesta simulada de Groq',
+                timestamp: new Date().toISOString()
+            };
+
+        } catch (error) {
+            return {
+                success: false,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            };
         }
     }
 
