@@ -27,6 +27,7 @@ import {
     Database,
     Receipt,
     Scan,
+    Users,
     Mail,
     Smartphone,
     Package
@@ -63,6 +64,7 @@ export const Header = ({
         ALERTS: "alerts",
         METRICS: "metrics",
         GROQ_CHAT: "groq_chat",
+        CONTRIBUTORS: "contributors",
         // Nuevas vistas de Ingreso de Facturas
         INVOICE_INTAKE: "invoice_intake",
         INVOICE_PROCESSING: "invoice_processing",
@@ -100,6 +102,13 @@ export const Header = ({
             label: 'Contribuyentes',
             icon: <User className="h-5 w-5" />,
             description: 'Información de contribuyentes',
+            section: 'main'
+        },
+        {
+            key: navigationViews.CONTRIBUTORS || 'contributors',
+            label: 'Gestión Clientes',
+            icon: <Users className="h-5 w-5" />,
+            description: 'Gestión de cartera de clientes',
             section: 'main'
         },
         {
@@ -212,8 +221,8 @@ export const Header = ({
                     setIsMenuOpen(false);
                 }}
                 className={`flex items-center w-full p-3 rounded-lg text-left transition-colors ${currentView === item.key
-                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                        : 'text-gray-700 hover:bg-gray-50'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                    : 'text-gray-700 hover:bg-gray-50'
                     }`}
             >
                 <div className="flex items-center justify-between w-full">
@@ -338,8 +347,8 @@ export const Header = ({
                             <button
                                 onClick={() => setActiveSection('main')}
                                 className={`px-4 py-3 text-sm font-medium border-b-2 ${activeSection === 'main'
-                                        ? 'text-blue-600 border-blue-600'
-                                        : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                                    ? 'text-blue-600 border-blue-600'
+                                    : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 Principal
@@ -347,8 +356,8 @@ export const Header = ({
                             <button
                                 onClick={() => setActiveSection('invoices')}
                                 className={`px-4 py-3 text-sm font-medium border-b-2 ${activeSection === 'invoices'
-                                        ? 'text-blue-600 border-blue-600'
-                                        : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                                    ? 'text-blue-600 border-blue-600'
+                                    : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 📋 Facturas
@@ -361,8 +370,8 @@ export const Header = ({
                             <button
                                 onClick={() => setActiveSection('ocr')}
                                 className={`px-4 py-3 text-sm font-medium border-b-2 ${activeSection === 'ocr'
-                                        ? 'text-blue-600 border-blue-600'
-                                        : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
+                                    ? 'text-blue-600 border-blue-600'
+                                    : 'text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300'
                                     }`}
                             >
                                 🤖 AI Assistant
@@ -379,8 +388,8 @@ export const Header = ({
                                         key={item.key}
                                         onClick={() => onViewChange(item.key)}
                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap ${currentView === item.key
-                                                ? 'bg-blue-100 text-blue-700'
-                                                : 'text-gray-500 hover:text-gray-700'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                     >
                                         {item.icon}
@@ -399,8 +408,8 @@ export const Header = ({
                                         key={item.key}
                                         onClick={() => onViewChange(item.key)}
                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap ${currentView === item.key
-                                                ? 'bg-blue-100 text-blue-700'
-                                                : 'text-gray-500 hover:text-gray-700'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                     >
                                         {item.icon}
@@ -419,8 +428,8 @@ export const Header = ({
                                         key={item.key}
                                         onClick={() => onViewChange(item.key)}
                                         className={`flex items-center px-3 py-2 rounded-md text-sm font-medium whitespace-nowrap ${currentView === item.key
-                                                ? 'bg-blue-100 text-blue-700'
-                                                : 'text-gray-500 hover:text-gray-700'
+                                            ? 'bg-blue-100 text-blue-700'
+                                            : 'text-gray-500 hover:text-gray-700'
                                             }`}
                                     >
                                         {item.icon}

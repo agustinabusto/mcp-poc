@@ -300,9 +300,7 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
                     />
                 );
 
-            // ========================================
-            // NUEVA VISTA DE CONTRIBUYENTES
-            // ========================================
+
             case VIEWS.CONTRIBUTORS:
                 console.log('✅ Renderizando ContribuyentesView');
                 return <ContribuyentesView />;
