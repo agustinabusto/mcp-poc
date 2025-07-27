@@ -1,21 +1,6 @@
-// src/client/hooks/useMonitoring.js - VERSIÓN COMPLETA REORGANIZADA
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export const useMonitoring = () => {
-    const [monitoringData, setMonitoringData] = useState({
-        metrics: {},
-        status: 'disconnected',
-        lastUpdate: null,
-        errors: [],
-        alerts: []
-    });
-    const [isConnected, setIsConnected] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const wsRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
-    const reconnectAttempts = useRef(0);
-    const maxReconnectAttempts = 5;
-
     // Detectar el puerto correcto basado en el entorno
     const getServerUrl = useCallback(() => {
         // En desarrollo, el servidor está en 8080
@@ -31,94 +16,107 @@ export const useMonitoring = () => {
             ws: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
         };
     }, []);
+    const [isConnected, setIsConnected] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [monitoringData, setMonitoringData] = useState({
+        status: 'disconnected',
+        alerts: [],
+        metrics: {},
+        errors: [],
+        lastUpdate: null
+    });
 
-    // ✅ 1. PRIMERO: handleMonitoringMessage (debe estar ANTES de connect)
-    const handleMonitoringMessage = useCallback((data) => {
-        console.log('📨 WebSocket message received:', data);
+    const wsRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const connectionTimeoutRef = useRef(null);
+    const reconnectAttempts = useRef(0);
+    const isConnectingRef = useRef(false);
+    const maxReconnectAttempts = 5;
 
+    // ✅ Función para validar URL del WebSocket
+    const validateWebSocketUrl = useCallback((url) => {
         try {
+            const urlObj = new URL(url);
+            return urlObj.protocol === 'ws:' || urlObj.protocol === 'wss:';
+        } catch {
+            return false;
+        }
+    }, []);
+
+    // ✅ Función para limpiar timeouts
+    const clearAllTimeouts = useCallback(() => {
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+        if (connectionTimeoutRef.current) {
+            clearTimeout(connectionTimeoutRef.current);
+            connectionTimeoutRef.current = null;
+        }
+    }, []);
+
+    // ✅ Función para registrar errores con más detalle
+    const logError = useCallback((message, type = 'general', details = {}) => {
+        const errorEntry = {
+            timestamp: new Date().toISOString(),
+            message,
+            type,
+            details
+        };
+
+        console.error(`❌ [${type.toUpperCase()}]`, message, details);
+
+        setMonitoringData(prev => ({
+            ...prev,
+            errors: [...prev.errors.slice(-9), errorEntry]
+        }));
+    }, []);
+
+    // ✅ Manejo mejorado de mensajes WebSocket
+    const handleMonitoringMessage = useCallback((data) => {
+        try {
+            console.log('📨 Monitoring message received:', data.type);
+
             switch (data.type) {
-                case 'welcome':
-                    console.log('👋 Welcome message:', data.message);
+                case 'alert':
+                    console.log('🚨 New alert:', data.message);
                     setMonitoringData(prev => ({
                         ...prev,
-                        status: 'connected',
-                        lastUpdate: new Date().toISOString(),
-                        metrics: {
-                            ...prev.metrics,
-                            server_status: 'connected',
-                            groq_enabled: data.groqEnabled,
-                            email_notifications: data.emailNotifications,
-                            client_id: data.clientId,
-                            server_info: data.serverInfo
-                        }
+                        alerts: [...prev.alerts.slice(-19), {
+                            id: data.id || Date.now(),
+                            timestamp: data.timestamp || new Date().toISOString(),
+                            message: data.message,
+                            level: data.level || 'info',
+                            category: data.category || 'general'
+                        }],
+                        lastUpdate: new Date().toISOString()
                     }));
-                    break;
-
-                case 'alert':
-                    console.log('🚨 Alert received:', data.data);
-                    if (data.data) {
-                        setMonitoringData(prev => ({
-                            ...prev,
-                            alerts: [data.data, ...prev.alerts.slice(0, 19)], // Mantener últimas 20 alertas
-                            lastUpdate: new Date().toISOString()
-                        }));
-                    }
                     break;
 
                 case 'metrics':
-                case 'metrics_update':
                     console.log('📊 Metrics update:', data.data);
-                    if (data.data) {
-                        setMonitoringData(prev => ({
-                            ...prev,
-                            metrics: { ...prev.metrics, ...data.data },
-                            lastUpdate: new Date().toISOString()
-                        }));
-                    }
+                    setMonitoringData(prev => ({
+                        ...prev,
+                        metrics: { ...prev.metrics, ...data.data },
+                        lastUpdate: new Date().toISOString()
+                    }));
                     break;
 
-                case 'new_alert':
-                    console.log('🆕 New alert:', data.data);
-                    if (data.data) {
-                        setMonitoringData(prev => ({
-                            ...prev,
-                            alerts: [data.data, ...prev.alerts.slice(0, 19)],
-                            lastUpdate: new Date().toISOString()
-                        }));
-                    }
-                    break;
-
-                case 'status_update':
-                    console.log('🔄 Status update:', data.data);
-                    if (data.data) {
-                        setMonitoringData(prev => ({
-                            ...prev,
-                            status: data.data.status || prev.status,
-                            metrics: { ...prev.metrics, ...data.data },
-                            lastUpdate: new Date().toISOString()
-                        }));
-                    }
-                    break;
-
-                case 'subscription_confirmed':
-                    console.log('✅ Subscription confirmed:', data.channels);
+                case 'status':
+                    console.log('📍 Status update:', data.status);
+                    setMonitoringData(prev => ({
+                        ...prev,
+                        status: data.status,
+                        lastUpdate: new Date().toISOString()
+                    }));
                     break;
 
                 case 'pong':
-                    console.log('🏓 Pong received');
+                    console.log('🏓 Pong received - connection alive');
                     break;
 
                 case 'error':
-                    console.error('❌ Server error:', data.message);
-                    setMonitoringData(prev => ({
-                        ...prev,
-                        errors: [...prev.errors.slice(-9), {
-                            timestamp: new Date().toISOString(),
-                            message: `Server error: ${data.message}`,
-                            type: 'server_error'
-                        }]
-                    }));
+                    logError(`Server error: ${data.message}`, 'server_error', data);
                     break;
 
                 case 'server_shutdown':
@@ -126,13 +124,9 @@ export const useMonitoring = () => {
                     setIsConnected(false);
                     setMonitoringData(prev => ({
                         ...prev,
-                        status: 'server_shutdown',
-                        errors: [...prev.errors.slice(-9), {
-                            timestamp: new Date().toISOString(),
-                            message: data.message,
-                            type: 'server_shutdown'
-                        }]
+                        status: 'server_shutdown'
                     }));
+                    logError(data.message, 'server_shutdown');
                     break;
 
                 default:
@@ -140,110 +134,143 @@ export const useMonitoring = () => {
                     break;
             }
         } catch (error) {
-            console.error('❌ Error handling WebSocket message:', error);
-            setMonitoringData(prev => ({
-                ...prev,
-                errors: [...prev.errors.slice(-9), {
-                    timestamp: new Date().toISOString(),
-                    message: `Error handling message: ${error.message}`,
-                    type: 'message_handling'
-                }]
-            }));
+            logError(`Error handling WebSocket message: ${error.message}`, 'message_handling', {
+                originalData: data,
+                error: error.message
+            });
         }
-    }, []);
+    }, [logError]);
 
-    // ✅ 2. DESPUÉS: connect (usa handleMonitoringMessage)
+    // ✅ Función de conexión mejorada
     const connect = useCallback(() => {
+        // Evitar conexiones concurrentes
+        if (isConnectingRef.current) {
+            console.log('🔄 Conexión ya en progreso, omitiendo...');
+            return;
+        }
+
         console.log("🔌 Intentando conectar WebSocket...");
+        isConnectingRef.current = true;
 
         try {
-            const { ws: wsUrl } = getServerUrl();
-            console.log(`🌐 Conectando a: ${wsUrl}`);
-
-            // Verificar si ya hay una conexión activa
-            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-                console.log("✅ WebSocket ya conectado");
-                return;
+            const serverUrls = getServerUrl();
+            if (!serverUrls || !serverUrls.ws) {
+                throw new Error('URL del servidor WebSocket no disponible');
             }
 
-            // Limpiar conexión existente si está en estado inválido
-            if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED) {
+            const wsUrl = serverUrls.ws;
+            console.log(`🌐 Conectando a: ${wsUrl}`);
+
+            // Validar URL
+            if (!validateWebSocketUrl(wsUrl)) {
+                throw new Error(`URL de WebSocket inválida: ${wsUrl}`);
+            }
+
+            // Limpiar conexión existente
+            if (wsRef.current) {
+                if (wsRef.current.readyState === WebSocket.OPEN) {
+                    console.log("✅ WebSocket ya conectado");
+                    isConnectingRef.current = false;
+                    return;
+                }
+
                 console.log("🧹 Limpiando conexión WebSocket anterior");
                 wsRef.current.close();
                 wsRef.current = null;
             }
 
+            // Limpiar timeouts previos
+            clearAllTimeouts();
+
             // Crear nueva conexión
             wsRef.current = new WebSocket(wsUrl);
 
-            // Configurar timeouts
-            const connectionTimeout = setTimeout(() => {
+            // Timeout de conexión
+            connectionTimeoutRef.current = setTimeout(() => {
                 if (wsRef.current && wsRef.current.readyState === WebSocket.CONNECTING) {
                     console.error('⏰ Timeout de conexión WebSocket');
                     wsRef.current.close();
+                    logError('Timeout de conexión WebSocket', 'connection_timeout', {
+                        url: wsUrl,
+                        timeout: 10000
+                    });
                 }
-            }, 10000); // 10 segundos timeout
+                isConnectingRef.current = false;
+            }, 10000);
 
+            // ✅ Manejo de eventos mejorado
             wsRef.current.onopen = () => {
-                clearTimeout(connectionTimeout);
                 console.log('✅ Monitoring WebSocket connected to server');
+                clearAllTimeouts();
+                isConnectingRef.current = false;
+
                 setIsConnected(true);
                 setMonitoringData(prev => ({
                     ...prev,
                     status: 'connected',
                     lastUpdate: new Date().toISOString(),
-                    errors: prev.errors.filter(e => e.type !== 'connection') // Limpiar errores de conexión
+                    errors: prev.errors.filter(e =>
+                        !['connection', 'connection_timeout', 'initialization'].includes(e.type)
+                    )
                 }));
+
                 reconnectAttempts.current = 0;
 
-                // Limpiar timeout de reconexión si existe
-                if (reconnectTimeoutRef.current) {
-                    clearTimeout(reconnectTimeoutRef.current);
-                    reconnectTimeoutRef.current = null;
-                }
-
-                // Enviar mensaje de subscripción
+                // Enviar suscripción
                 try {
-                    wsRef.current.send(JSON.stringify({
+                    const subscriptionMessage = {
                         type: 'subscribe',
                         channels: ['alerts', 'metrics', 'status'],
-                        timestamp: new Date().toISOString()
-                    }));
+                        timestamp: new Date().toISOString(),
+                        clientId: `client_${Date.now()}`
+                    };
+
+                    wsRef.current.send(JSON.stringify(subscriptionMessage));
                     console.log('📡 Suscripción enviada al servidor');
                 } catch (error) {
-                    console.error('❌ Error enviando suscripción:', error);
+                    logError(`Error enviando suscripción: ${error.message}`, 'subscription_error');
                 }
             };
 
             wsRef.current.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    handleMonitoringMessage(data); // ✅ AHORA SÍ está definida
+                    handleMonitoringMessage(data);
                 } catch (err) {
-                    console.error('❌ Error parsing monitoring message:', err);
-                    console.log('📦 Raw message:', event.data);
-
-                    setMonitoringData(prev => ({
-                        ...prev,
-                        errors: [...prev.errors.slice(-9), {
-                            timestamp: new Date().toISOString(),
-                            message: `Error parsing WebSocket message: ${err.message}`,
-                            type: 'parsing'
-                        }]
-                    }));
+                    logError(`Error parsing WebSocket message: ${err.message}`, 'parsing', {
+                        rawMessage: event.data,
+                        error: err.message
+                    });
                 }
             };
 
             wsRef.current.onclose = (event) => {
-                clearTimeout(connectionTimeout);
-                console.log(`🔌 Monitoring WebSocket disconnected - Code: ${event.code}, Reason: ${event.reason}`);
+                console.log(`🔌 WebSocket disconnected - Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`);
+                clearAllTimeouts();
+                isConnectingRef.current = false;
                 setIsConnected(false);
                 setMonitoringData(prev => ({ ...prev, status: 'disconnected' }));
 
-                // Determinar si debe reconectar basado en el código de cierre
-                const shouldReconnect = event.code !== 1000 && event.code !== 1001; // No reconectar si es cierre normal
+                // Mapeo de códigos de cierre
+                const closeReasons = {
+                    1000: 'Normal closure',
+                    1001: 'Going away',
+                    1002: 'Protocol error',
+                    1003: 'Unsupported data',
+                    1006: 'Abnormal closure',
+                    1011: 'Server error',
+                    1012: 'Service restart'
+                };
 
-                if (shouldReconnect && reconnectAttempts.current < maxReconnectAttempts) {
+                const closeReason = closeReasons[event.code] || `Unknown code: ${event.code}`;
+                console.log(`📋 Close reason: ${closeReason}`);
+
+                // Determinar si debe reconectar
+                const noReconnectCodes = [1000, 1001, 1002, 1003]; // Cierres normales o errores de protocolo
+                const shouldReconnect = !noReconnectCodes.includes(event.code) &&
+                    reconnectAttempts.current < maxReconnectAttempts;
+
+                if (shouldReconnect) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
                     console.log(`🔄 Reintentando conexión en ${delay}ms (intento ${reconnectAttempts.current + 1}/${maxReconnectAttempts})`);
 
@@ -252,308 +279,156 @@ export const useMonitoring = () => {
                         connect();
                     }, delay);
                 } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-                    console.log('❌ Máximo de intentos de reconexión alcanzado');
-                    setMonitoringData(prev => ({
-                        ...prev,
-                        errors: [...prev.errors.slice(-9), {
-                            timestamp: new Date().toISOString(),
-                            message: 'Máximo de intentos de reconexión alcanzado',
-                            type: 'connection'
-                        }]
-                    }));
+                    logError('Máximo de intentos de reconexión alcanzado', 'max_reconnect_attempts', {
+                        attempts: reconnectAttempts.current,
+                        maxAttempts: maxReconnectAttempts
+                    });
                 }
             };
 
+            // ✅ Manejo mejorado de errores
             wsRef.current.onerror = (error) => {
-                clearTimeout(connectionTimeout);
-                console.error('❌ Monitoring WebSocket error:', error);
+                console.error('❌ WebSocket error event:', error);
+                clearAllTimeouts();
+                isConnectingRef.current = false;
 
-                // Agregar información más detallada del error
+                // Obtener información detallada del error
+                const errorDetails = {
+                    url: wsUrl,
+                    readyState: wsRef.current?.readyState,
+                    attempt: reconnectAttempts.current + 1,
+                    timestamp: new Date().toISOString()
+                };
+
                 let errorMessage = 'WebSocket connection error';
 
-                if (error.target) {
-                    errorMessage += ` - ReadyState: ${error.target.readyState}`;
+                if (wsRef.current) {
+                    const readyStateMap = {
+                        [WebSocket.CONNECTING]: 'CONNECTING',
+                        [WebSocket.OPEN]: 'OPEN',
+                        [WebSocket.CLOSING]: 'CLOSING',
+                        [WebSocket.CLOSED]: 'CLOSED'
+                    };
 
-                    switch (error.target.readyState) {
-                        case WebSocket.CONNECTING:
-                            errorMessage += ' (Connecting)';
-                            break;
-                        case WebSocket.OPEN:
-                            errorMessage += ' (Open)';
-                            break;
-                        case WebSocket.CLOSING:
-                            errorMessage += ' (Closing)';
-                            break;
-                        case WebSocket.CLOSED:
-                            errorMessage += ' (Closed)';
-                            break;
-                    }
+                    const readyStateStr = readyStateMap[wsRef.current.readyState] || 'UNKNOWN';
+                    errorMessage += ` - State: ${readyStateStr}`;
+                    errorDetails.readyStateStr = readyStateStr;
                 }
 
-                setMonitoringData(prev => ({
-                    ...prev,
-                    errors: [...prev.errors.slice(-9), {
-                        timestamp: new Date().toISOString(),
-                        message: errorMessage,
-                        type: 'connection',
-                        details: {
-                            url: wsUrl,
-                            readyState: error.target?.readyState,
-                            attempt: reconnectAttempts.current + 1
-                        }
-                    }]
-                }));
+                // Intentar determinar el tipo de error
+                if (wsUrl.includes('localhost') || wsUrl.includes('127.0.0.1')) {
+                    errorMessage += ' (Servidor local no disponible)';
+                    errorDetails.errorType = 'local_server_unavailable';
+                } else if (!navigator.onLine) {
+                    errorMessage += ' (Sin conexión a internet)';
+                    errorDetails.errorType = 'network_offline';
+                } else {
+                    errorDetails.errorType = 'connection_failed';
+                }
+
+                logError(errorMessage, 'connection', errorDetails);
             };
 
         } catch (err) {
             console.error('❌ Error creating WebSocket connection:', err);
-            setMonitoringData(prev => ({
-                ...prev,
-                errors: [...prev.errors.slice(-9), {
-                    timestamp: new Date().toISOString(),
-                    message: `Error creating WebSocket: ${err.message}`,
-                    type: 'initialization'
-                }]
-            }));
+            isConnectingRef.current = false;
+            logError(`Error creating WebSocket: ${err.message}`, 'initialization', {
+                error: err.message,
+                stack: err.stack
+            });
         }
-    }, [getServerUrl, handleMonitoringMessage]);
+    }, [getServerUrl, validateWebSocketUrl, clearAllTimeouts, handleMonitoringMessage, logError]);
 
-    // ✅ 3. RESTO DE FUNCIONES en orden normal
+    // ✅ Función de desconexión
     const disconnect = useCallback(() => {
+        console.log('🔌 Desconectando WebSocket...');
+        isConnectingRef.current = false;
+
         if (wsRef.current) {
-            wsRef.current.close();
+            // Enviar mensaje de desconexión si es posible
+            if (wsRef.current.readyState === WebSocket.OPEN) {
+                try {
+                    wsRef.current.send(JSON.stringify({
+                        type: 'disconnect',
+                        timestamp: new Date().toISOString()
+                    }));
+                } catch (error) {
+                    console.warn('⚠️ Error enviando mensaje de desconexión:', error);
+                }
+            }
+
+            wsRef.current.close(1000, 'Client disconnecting');
             wsRef.current = null;
         }
 
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-        }
-
+        clearAllTimeouts();
         setIsConnected(false);
         reconnectAttempts.current = 0;
-    }, []);
 
-    // Función para obtener métricas usando endpoint real
+        setMonitoringData(prev => ({
+            ...prev,
+            status: 'disconnected'
+        }));
+    }, [clearAllTimeouts]);
+
+    // ✅ Función mejorada para obtener métricas
     const getMetrics = useCallback(async () => {
         if (loading) return {};
 
         setLoading(true);
         try {
-            const { http } = getServerUrl();
-            const response = await fetch(`${http}/api/status`);
+            const serverUrls = getServerUrl();
+            if (!serverUrls || !serverUrls.http) {
+                throw new Error('URL del servidor HTTP no disponible');
+            }
+
+            const response = await fetch(`${serverUrls.http}/api/status`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                timeout: 5000
+            });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
 
             // Transformar datos del servidor al formato esperado
             const metrics = {
-                server_status: data.status,
-                afip_mode: data.afipMode,
-                groq_enabled: data.groqEnabled,
-                uptime: data.uptime,
-                memory_usage: data.memory ? {
-                    rss: data.memory.rss,
-                    heapUsed: data.memory.heapUsed,
-                    heapTotal: data.memory.heapTotal
-                } : null,
-                timestamp: data.timestamp
+                server_status: data.status || 'unknown',
+                afip_mode: data.afipMode || 'unknown',
+                groq_enabled: data.groqEnabled || false,
+                uptime: data.uptime || 0,
+                memory_usage: data.memory ?
+                    `${Math.round(data.memory.used / 1024 / 1024)}MB / ${Math.round(data.memory.total / 1024 / 1024)}MB` :
+                    'N/A',
+                cpu_usage: data.cpu ? `${Math.round(data.cpu)}%` : 'N/A',
+                connections: data.connections || 0,
+                requests_per_minute: data.requestsPerMinute || 0,
+                timestamp: new Date().toISOString()
             };
 
             setMonitoringData(prev => ({
                 ...prev,
-                metrics: { ...prev.metrics, ...metrics },
+                metrics,
                 lastUpdate: new Date().toISOString()
             }));
 
             return metrics;
-        } catch (err) {
-            console.error('❌ Error fetching metrics:', err);
-
-            // Agregar error pero no lanzar excepción para no romper la UI
-            setMonitoringData(prev => ({
-                ...prev,
-                errors: [...prev.errors.slice(-9), {
-                    timestamp: new Date().toISOString(),
-                    message: `Error fetching metrics: ${err.message}`,
-                    type: 'api_error'
-                }]
-            }));
-
+        } catch (error) {
+            logError(`Error fetching metrics: ${error.message}`, 'metrics_fetch', {
+                error: error.message
+            });
             return {};
         } finally {
             setLoading(false);
         }
-    }, [getServerUrl, loading]);
+    }, [getServerUrl, loading, logError]);
 
-    // Función para obtener estado del sistema usando endpoint real
-    const getSystemStatus = useCallback(async () => {
-        try {
-            const { http } = getServerUrl();
-            const response = await fetch(`${http}/health`);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            setMonitoringData(prev => ({
-                ...prev,
-                status: data.status || 'unknown',
-                lastUpdate: new Date().toISOString(),
-                metrics: {
-                    ...prev.metrics,
-                    health_status: data.status,
-                    services: data.services
-                }
-            }));
-
-            return data;
-        } catch (err) {
-            console.error('❌ Error fetching system status:', err);
-
-            // Agregar error pero no lanzar excepción
-            setMonitoringData(prev => ({
-                ...prev,
-                errors: [...prev.errors.slice(-9), {
-                    timestamp: new Date().toISOString(),
-                    message: `Error fetching system status: ${err.message}`,
-                    type: 'api_error'
-                }]
-            }));
-
-            return { status: 'error', error: err.message };
-        }
-    }, [getServerUrl]);
-
-    // ✅ Función para obtener alertas usando endpoint real
-    const getAlerts = useCallback(async () => {
-        try {
-            const { http } = getServerUrl();
-            const response = await fetch(`${http}/api/alerts`);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            // El endpoint devuelve { success: true, data: [...], total: ... }
-            const alerts = data.success ? data.data : [];
-
-            setMonitoringData(prev => ({
-                ...prev,
-                alerts: alerts,
-                lastUpdate: new Date().toISOString()
-            }));
-
-            console.log(`✅ Alertas obtenidas: ${alerts.length} alertas`);
-            return alerts;
-
-        } catch (err) {
-            console.error('❌ Error fetching alerts:', err);
-
-            // Agregar error pero no lanzar excepción
-            setMonitoringData(prev => ({
-                ...prev,
-                errors: [...prev.errors.slice(-9), {
-                    timestamp: new Date().toISOString(),
-                    message: `Error fetching alerts: ${err.message}`,
-                    type: 'api_error'
-                }]
-            }));
-
-            return [];
-        }
-    }, [getServerUrl]);
-
-    // ✅ Función refreshAlerts
-    const refreshAlerts = useCallback(async () => {
-        console.log('🔄 Refreshing alerts...');
-        return await getAlerts();
-    }, [getAlerts]);
-
-    // Función para obtener métricas AFIP específicas
-    const getAfipMetrics = useCallback(async () => {
-        try {
-            const { http } = getServerUrl();
-            const response = await fetch(`${http}/api/status`);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-
-            // Extraer métricas específicas de AFIP
-            const afipMetrics = {
-                connection_status: data.afipClient?.connectionStatus || 'unknown',
-                mock_mode: data.afipMode === 'MOCK',
-                response_time: data.afipClient?.metrics?.averageResponseTime || 0,
-                requests_count: data.afipClient?.metrics?.totalRequests || 0,
-                errors_count: data.afipClient?.metrics?.totalErrors || 0,
-                last_check: data.timestamp
-            };
-
-            setMonitoringData(prev => ({
-                ...prev,
-                metrics: { ...prev.metrics, afip: afipMetrics },
-                lastUpdate: new Date().toISOString()
-            }));
-
-            return afipMetrics;
-        } catch (err) {
-            console.error('❌ Error fetching AFIP metrics:', err);
-            return {};
-        }
-    }, [getServerUrl]);
-
-    // Función para limpiar errores
-    const clearErrors = useCallback(() => {
-        setMonitoringData(prev => ({
-            ...prev,
-            errors: []
-        }));
-    }, []);
-
-    // Función para limpiar alertas
-    const clearAlerts = useCallback(() => {
-        setMonitoringData(prev => ({
-            ...prev,
-            alerts: []
-        }));
-    }, []);
-
-    // Función para generar métricas mock (para desarrollo)
-    const generateMockMetrics = useCallback(() => {
-        const mockMetrics = {
-            server_status: 'running',
-            uptime: Math.floor(Math.random() * 86400), // 0-24 horas
-            cpu_usage: Math.floor(Math.random() * 100),
-            memory_usage: {
-                rss: Math.floor(Math.random() * 1000000000), // ~1GB
-                heapUsed: Math.floor(Math.random() * 500000000), // ~500MB
-                heapTotal: Math.floor(Math.random() * 600000000) // ~600MB
-            },
-            active_connections: Math.floor(Math.random() * 50),
-            requests_per_minute: Math.floor(Math.random() * 1000),
-            timestamp: new Date().toISOString()
-        };
-
-        setMonitoringData(prev => ({
-            ...prev,
-            metrics: { ...prev.metrics, ...mockMetrics },
-            lastUpdate: new Date().toISOString()
-        }));
-
-        return mockMetrics;
-    }, []);
-
-    // Función para enviar ping manual
+    // ✅ Función para enviar ping
     const sendPing = useCallback(() => {
         if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
             try {
@@ -561,66 +436,34 @@ export const useMonitoring = () => {
                     type: 'ping',
                     timestamp: new Date().toISOString()
                 }));
-                console.log('🏓 Ping enviado al servidor');
+                console.log('🏓 Ping enviado');
             } catch (error) {
-                console.error('❌ Error enviando ping:', error);
+                logError(`Error enviando ping: ${error.message}`, 'ping_error');
             }
         }
-    }, []);
+    }, [logError]);
 
-    // Inicialización del hook
+    // ✅ Cleanup al desmontar el componente
     useEffect(() => {
-        console.log('🚀 Inicializando useMonitoring...');
-
-        // Obtener datos iniciales
-        getMetrics().catch(console.error);
-        getAlerts().catch(console.error);
-
-        // Intentar conectar WebSocket
-        connect();
-
         return () => {
             disconnect();
         };
-    }, [connect, disconnect, getMetrics, getAlerts]);
-
-    // Polling de métricas cada 30 segundos como fallback
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (!isConnected) {
-                console.log('🔄 Polling metrics (WebSocket disconnected)');
-                getMetrics().catch(console.error);
-                getAlerts().catch(console.error);
-            } else {
-                // Si WebSocket está conectado, generar métricas mock ocasionalmente
-                generateMockMetrics();
-            }
-        }, 30000);
-
-        return () => clearInterval(interval);
-    }, [isConnected, getMetrics, getAlerts, generateMockMetrics]);
+    }, [disconnect]);
 
     return {
-        // State
-        monitoringData,
         isConnected,
         loading,
-
-        // Actions
+        monitoringData,
         connect,
         disconnect,
-
-        // API functions
         getMetrics,
-        getSystemStatus,
-        getAfipMetrics,
-        getAlerts,
-        refreshAlerts,
-
-        // Utility functions
-        clearErrors,
-        clearAlerts,
-        generateMockMetrics,
-        sendPing
+        sendPing,
+        // Funciones adicionales para debugging
+        getConnectionState: () => wsRef.current?.readyState,
+        getReconnectAttempts: () => reconnectAttempts.current,
+        clearErrors: () => setMonitoringData(prev => ({ ...prev, errors: [] }))
     };
 };
+
+// Exportar también como default para compatibilidad
+export default useMonitoring;

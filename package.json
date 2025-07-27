@@ -25,7 +25,11 @@
     "docker:run": "docker run -p 8080:8080 -p 3001:3001 afip-monitor-mcp",
     "docker:dev": "docker-compose up -d",
     "docker:stop": "docker-compose down",
-    "reset": "npm run clean && npm install"
+    "reset": "npm run clean && npm install",
+    "generate-icons": "node generate-icons.js",
+    "build-pwa": "npm run generate-icons && npm run build",
+    "validate-pwa": "lighthouse http://localhost:3001 --only-categories=pwa --chrome-flags='--headless'",
+    "serve-https": "vite preview --https --cert cert.pem --key key.pem"
   },
   "keywords": [
     "afip",
@@ -35,7 +39,8 @@
     "argentina",
     "fiscal",
     "react",
-    "nodejs"
+    "nodejs",
+    "arca"
   ],
   "author": "Snarx.io",
   "license": "MIT",

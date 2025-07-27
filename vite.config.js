@@ -1,62 +1,133 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { resolve } from 'path';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
 
-  // Configuración para desarrollo
-  root: 'src/client',
-  publicDir: '../../public',
-
-  // Configuración de build
-  build: {
-    outDir: '../../dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'src/client/index.html')
-      }
-    }
-  },
-
-  // Servidor de desarrollo
+  // Configuración del servidor de desarrollo
   server: {
-    port: 3000,
-    host: true, // Permite conexiones externas
-    cors: true,
+    host: '0.0.0.0',
+    port: 3001,
+    strictPort: true,
+
+    // Proxy para API calls al servidor backend
     proxy: {
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
-        secure: false
+        secure: false,
+        ws: true // Habilitar WebSocket proxy
       },
-      '/health': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        secure: false
-      },
+      // Proxy para WebSocket connections
       '/ws': {
         target: 'ws://localhost:8080',
         ws: true,
         changeOrigin: true
       }
+    },
+
+    // CORS configuration
+    cors: {
+      origin: ['http://localhost:3001', 'http://localhost:8080'],
+      credentials: true
     }
   },
 
-  // Optimizaciones
-  optimizeDeps: {
-    include: ['react', 'react-dom']
+  // Configuración de build
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    sourcemap: true,
+
+    // Optimizaciones de build
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Separar vendor chunks para mejor caching
+          vendor: ['react', 'react-dom'],
+          lucide: ['lucide-react'],
+          // Separar hooks y servicios
+          hooks: [
+            'src/client/hooks/useMonitoring.js',
+            'src/client/hooks/useAlerts.js',
+            'src/client/hooks/useCompliance.js'
+          ]
+        }
+      }
+    },
+
+    // Configuración de assets
+    assetsInlineLimit: 4096, // 4kb
+    chunkSizeWarningLimit: 1000,
+
+    // Minimización
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: process.env.NODE_ENV === 'production',
+        drop_debugger: true
+      }
+    }
+  },
+
+  // Resolución de paths
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src/client'),
+      '@components': path.resolve(__dirname, 'src/client/components'),
+      '@hooks': path.resolve(__dirname, 'src/client/hooks'),
+      '@services': path.resolve(__dirname, 'src/client/services'),
+      '@config': path.resolve(__dirname, 'src/client/config'),
+      '@utils': path.resolve(__dirname, 'src/client/utils')
+    }
   },
 
   // Variables de entorno
   define: {
-    __APP_VERSION__: JSON.stringify(process.env.npm_package_version)
+    __DEV__: process.env.NODE_ENV === 'development',
+    __PROD__: process.env.NODE_ENV === 'production',
+    __VERSION__: JSON.stringify(process.env.npm_package_version || '1.0.0')
   },
 
-  // Configuración para preview
+  // Configuración de assets públicos
+  publicDir: 'public',
+
+  // Base URL para deployment
+  base: '/',
+
+  // Configuración de CSS
+  css: {
+    devSourcemap: true,
+    preprocessorOptions: {
+      scss: {
+        additionalData: `@import "@/styles/variables.scss";`
+      }
+    }
+  },
+
+  // Optimización de dependencias
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'lucide-react'
+    ],
+    exclude: [
+      // Excluir módulos que causan problemas
+    ]
+  },
+
+  // Configuración PWA específica
+  esbuild: {
+    jsxInject: `import React from 'react'`,
+    target: 'es2020'
+  },
+
+  // Configuración para el preview
   preview: {
     port: 4173,
-    host: true
+    strictPort: true,
+    host: '0.0.0.0'
   }
 });
