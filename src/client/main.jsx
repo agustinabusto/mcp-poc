@@ -1,6 +1,9 @@
 // src/client/main.jsx - Versión actualizada con OCR
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { AuthProvider } from './context/AuthContext.jsx';
+import ProtectedRoute from './components/auth/ProtectedRoute.jsx';
+import SessionExpiringNotification from './components/auth/SessionExpiringNotification.jsx';
 //import AfipMonitorWithOCR from './components/AfipMonitorWithOCR.jsx';
 import AfipMonitorEnhanced from './components/AfipMonitorEnhanced.jsx';
 import './index.css';
@@ -9,6 +12,7 @@ import './index.css';
 const config = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080',
   wsUrl: import.meta.env.VITE_WS_URL || 'ws://localhost:8080',
+  environment: import.meta.env.NODE_ENV || 'development',
 
   // Configuraciones específicas para OCR
   ocr: {
@@ -177,12 +181,16 @@ const initializeApp = async () => {
     // Renderizar aplicación
     ReactDOM.createRoot(document.getElementById('root')).render(
       <React.StrictMode>
-        {/* <AfipMonitorWithOCR config={config} /> */}
-        <AfipMonitorEnhanced config={config} />
+        <AuthProvider>
+          <ProtectedRoute>
+            <AfipMonitorEnhanced config={config} />
+            <SessionExpiringNotification />
+          </ProtectedRoute>
+        </AuthProvider>
       </React.StrictMode>
     );
 
-    console.log('✅ Aplicación AFIP Monitor MCP + OCR iniciada exitosamente');
+    console.log('✅ BookKeeper iniciado exitosamente con autenticación');
 
   } catch (error) {
     console.error('❌ Error fatal durante la inicialización:', error);

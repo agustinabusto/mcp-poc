@@ -1,5 +1,8 @@
 // src/client/components/common/Header.jsx - Versión actualizada con Ingreso de Facturas
 import React, { useState, useRef, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext.jsx';
+import { usePermissions } from '../../hooks/usePermissions.js';
+import UserProfileModal from '../auth/UserProfileModal.jsx';
 import {
     Search,
     Bell,
@@ -52,6 +55,9 @@ export const Header = ({
     const [searchSuggestions, setSearchSuggestions] = useState([]);
     const [searchError, setSearchError] = useState(null);
     const [activeSection, setActiveSection] = useState('main'); // 'main', 'ocr', 'invoices'
+    const [showProfileModal, setShowProfileModal] = useState(false);
+    const { user, logout } = useAuth();
+    const { hasPermission } = usePermissions();
 
     const searchRef = useRef(null);
     const dropdownRef = useRef(null);
@@ -243,6 +249,12 @@ export const Header = ({
         ));
     };
 
+    {/* User Profile Modal */ }
+    <UserProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+    />
+
     return (
         <header className="bg-white shadow-sm border-b">
             {/* Header principal con búsqueda y controles */}
@@ -254,7 +266,7 @@ export const Header = ({
                             <Activity className="h-8 w-8 text-blue-600" />
                         </div>
                         <div className="hidden md:block ml-4">
-                            <h1 className="text-xl font-semibold text-gray-900">AFIP Monitor</h1>
+                            <h1 className="text-xl font-semibold text-gray-900">BookKepper Monitor</h1>
                             <p className="text-sm text-gray-500">Sistema de Monitoreo y Gestión</p>
                         </div>
                     </div>
@@ -283,6 +295,22 @@ export const Header = ({
                         >
                             <Menu className="h-6 w-6" />
                         </button>
+                        {user && (
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowProfileModal(true)}
+                                    className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                                    title={`Usuario: ${user.name}`}
+                                >
+                                    <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                                        <User className="h-5 w-5 text-white" />
+                                    </div>
+                                    <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-32 truncate">
+                                        {user.name}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

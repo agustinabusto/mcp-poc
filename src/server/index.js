@@ -39,6 +39,7 @@ import {
 // Importar rutas existentes
 import groqChatRoutes from './routes/groq-chat.js';
 import ocrRoutes from './routes/ocr-routes.js';
+import authRoutes from './routes/auth-routes.js';
 
 // Importar nueva ruta de contributors
 import contributorsRoutes from './routes/contributors.js';
@@ -166,6 +167,13 @@ app.use(cors(config.cors));
 // Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Trust proxy para obtener IP real
+app.set('trust proxy', 1);
+
+// Routes de autenticación
+app.use('/api/auth', authRoutes);
+
 
 // Middleware para logging de requests
 app.use((req, res, next) => {
