@@ -80,7 +80,8 @@ export const Header = ({
         OCR_PROCESSING: "ocr_processing",
         BANK_RECONCILIATION: "bank_reconciliation",
         TRANSACTION_CATEGORIZATION: "transaction_categorization",
-        OCR_METRICS: "ocr_metrics"
+        OCR_METRICS: "ocr_metrics",
+        USERS: "users"
     };
 
     const navigationViews = views && Object.keys(views).length > 0 ? views : defaultViews;
@@ -136,6 +137,13 @@ export const Header = ({
             label: 'AI Assistant',
             icon: <Bot className="h-5 w-5" />,
             description: 'Asistente de inteligencia artificial',
+            section: 'main'
+        },
+        {
+            key: navigationViews.USERS || 'users',
+            label: 'Gestión Usuarios',
+            icon: <Users className="h-5 w-5" />,
+            description: 'Administración de usuarios del sistema',
             section: 'main'
         }
     ];

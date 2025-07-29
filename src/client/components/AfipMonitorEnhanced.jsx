@@ -33,6 +33,8 @@ import InvoiceProcessing from "./invoices/InvoiceProcessing.jsx";
 import InvoiceValidation from "./invoices/InvoiceValidation.jsx";
 import InvoiceIntegration from "./invoices/InvoiceIntegration.jsx";
 
+import { UserManagement } from './UserManagement';
+
 // ========================================
 // IMPORTAR COMPONENTES OCR
 // ========================================
@@ -67,7 +69,8 @@ const VIEWS = {
     OCR_PROCESSING: "ocr_processing",
     BANK_RECONCILIATION: "bank_reconciliation",
     TRANSACTION_CATEGORIZATION: "transaction_categorization",
-    OCR_METRICS: "ocr_metrics"
+    OCR_METRICS: "ocr_metrics",
+    USERS: "users"
 };
 
 // ========================================
@@ -393,6 +396,9 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
             case VIEWS.OCR_METRICS:
                 console.log('✅ Renderizando OCRMetricsView');
                 return <OCRMetricsView config={config} />;
+
+            case VIEWS.USERS:
+                return <UserManagement />;
 
             default:
                 console.error(`❌ Vista no implementada: ${currentView}`);
