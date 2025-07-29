@@ -398,6 +398,7 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
                 return <OCRMetricsView config={config} />;
 
             case VIEWS.USERS:
+                console.log('✅ Renderizando UserManagement');
                 return <UserManagement />;
 
             default:
