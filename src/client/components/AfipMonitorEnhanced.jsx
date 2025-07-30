@@ -34,6 +34,7 @@ import InvoiceValidation from "./invoices/InvoiceValidation.jsx";
 import InvoiceIntegration from "./invoices/InvoiceIntegration.jsx";
 
 import { UserManagement } from './UserManagement';
+import UserManagementView from './UserManagement/UserManagementView.jsx';
 
 // ========================================
 // IMPORTAR COMPONENTES OCR
@@ -70,7 +71,8 @@ const VIEWS = {
     BANK_RECONCILIATION: "bank_reconciliation",
     TRANSACTION_CATEGORIZATION: "transaction_categorization",
     OCR_METRICS: "ocr_metrics",
-    USERS: "users"
+    USERS: "users",
+    USER_MANAGEMENT: 'user_management',
 };
 
 // ========================================
@@ -400,6 +402,10 @@ const AfipMonitorEnhanced = ({ config = {} }) => {
             case VIEWS.USERS:
                 console.log('✅ Renderizando UserManagement');
                 return <UserManagement />;
+
+            case VIEWS.USER_MANAGEMENT:
+                console.log('✅ Renderizando UserManagementView');
+                return <UserManagementView config={config} />;
 
             default:
                 console.error(`❌ Vista no implementada: ${currentView}`);

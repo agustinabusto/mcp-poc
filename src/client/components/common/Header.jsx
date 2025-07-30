@@ -81,7 +81,7 @@ export const Header = ({
         BANK_RECONCILIATION: "bank_reconciliation",
         TRANSACTION_CATEGORIZATION: "transaction_categorization",
         OCR_METRICS: "ocr_metrics",
-        USERS: "users"
+        USER_MANAGEMENT: "user_management",
     };
 
     const navigationViews = views && Object.keys(views).length > 0 ? views : defaultViews;
@@ -140,10 +140,10 @@ export const Header = ({
             section: 'main'
         },
         {
-            key: navigationViews.USERS || 'users',
+            key: navigationViews.USER_MANAGEMENT || 'user_management',
             label: 'Gestión Usuarios',
             icon: <Users className="h-5 w-5" />,
-            description: 'Administración de usuarios del sistema',
+            description: 'Administración de usuarios y permisos del sistema',
             section: 'main'
         }
     ];
