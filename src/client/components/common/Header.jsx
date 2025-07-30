@@ -71,6 +71,7 @@ export const Header = ({
         METRICS: "metrics",
         GROQ_CHAT: "groq_chat",
         CONTRIBUTORS: "contributors",
+        USER_MANAGEMENT: "user_management",
         // Nuevas vistas de Ingreso de Facturas
         INVOICE_INTAKE: "invoice_intake",
         INVOICE_PROCESSING: "invoice_processing",
@@ -81,7 +82,7 @@ export const Header = ({
         BANK_RECONCILIATION: "bank_reconciliation",
         TRANSACTION_CATEGORIZATION: "transaction_categorization",
         OCR_METRICS: "ocr_metrics",
-        USER_MANAGEMENT: "user_management",
+
     };
 
     const navigationViews = views && Object.keys(views).length > 0 ? views : defaultViews;
@@ -119,6 +120,13 @@ export const Header = ({
             section: 'main'
         },
         {
+            key: navigationViews.USER_MANAGEMENT || 'user_management',
+            label: 'Gestión Usuarios',
+            icon: <Users className="h-5 w-5" />,
+            description: 'Administración de usuarios y permisos del sistema',
+            section: 'main'
+        },
+        {
             key: navigationViews.COMPLIANCE || 'compliance',
             label: 'Compliance',
             icon: <CheckCircle className="h-5 w-5" />,
@@ -137,13 +145,6 @@ export const Header = ({
             label: 'AI Assistant',
             icon: <Bot className="h-5 w-5" />,
             description: 'Asistente de inteligencia artificial',
-            section: 'main'
-        },
-        {
-            key: navigationViews.USER_MANAGEMENT || 'user_management',
-            label: 'Gestión Usuarios',
-            icon: <Users className="h-5 w-5" />,
-            description: 'Administración de usuarios y permisos del sistema',
             section: 'main'
         }
     ];
