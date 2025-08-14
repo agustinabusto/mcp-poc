@@ -6,45 +6,70 @@ import { body, validationResult, param, query } from 'express-validator';
 
 const router = express.Router();
 
-// Datos mock temporales para testing
+// Datos mock temporales para testing - Compatible con frontend
 const mockContributors = [
     {
-        id: 1,
-        cuit: '30712345678',
-        razonSocial: 'ACME Corp S.A.',
-        email: 'contacto@acme.com',
-        telefono: '+54 11 4444-5555',
-        direccion: 'Av. Corrientes 1234, CABA',
-        situacionAfip: 'activo',
-        categoria: 'responsable_inscripto',
-        tags: ['cliente_vip', 'tecnologia'],
-        fechaCreacion: new Date().toISOString(),
-        fechaModificacion: new Date().toISOString(),
-        activo: true
+        id: 'contrib-001',
+        cuit: '20-12345678-9',
+        razonSocial: 'EMPRESA EJEMPLO SA',
+        nombreFantasia: 'Empresa Ejemplo',
+        domicilioFiscal: {
+            calle: 'Av. Corrientes',
+            numero: '1234',
+            ciudad: 'CABA',
+            provincia: 'CABA',
+            codigoPostal: 'C1043AAZ'
+        },
+        email: 'contacto@ejemplo.com',
+        telefono: '011-1234-5678',
+        categoriaFiscal: 'Responsable Inscripto',
+        estado: 'Activo',
+        fechaInscripcion: '2024-01-15T09:00:00Z',
+        ultimaActualizacion: '2025-01-28T15:45:00Z',
+        complianceScore: 85,
+        riskLevel: 'Low'
     },
     {
-        id: 2,
-        cuit: '27234567890',
-        razonSocial: 'Juan Pérez',
-        email: 'juan@email.com',
-        telefono: '+54 11 5555-6666',
-        categoria: 'monotributo',
-        situacionAfip: 'activo',
-        tags: ['freelancer'],
-        fechaCreacion: new Date().toISOString(),
-        fechaModificacion: new Date().toISOString(),
-        activo: true
+        id: 'contrib-002',
+        cuit: '23-87654321-4',
+        razonSocial: 'GARCIA MARIA',
+        nombreFantasia: null,
+        domicilioFiscal: {
+            calle: 'San Martín',
+            numero: '567',
+            ciudad: 'La Plata',
+            provincia: 'Buenos Aires',
+            codigoPostal: 'B1900'
+        },
+        email: 'maria.garcia@email.com',
+        telefono: '0221-456-7890',
+        categoriaFiscal: 'Monotributista',
+        estado: 'Activo',
+        fechaInscripcion: '2024-03-20T14:30:00Z',
+        ultimaActualizacion: '2025-01-29T08:20:00Z',
+        complianceScore: 75,
+        riskLevel: 'Medium'
     },
     {
-        id: 3,
-        cuit: '30999888777',
-        razonSocial: 'Tech Solutions S.R.L.',
-        email: 'info@techsolutions.com',
-        categoria: 'responsable_inscripto',
-        situacionAfip: 'activo',
-        fechaCreacion: new Date().toISOString(),
-        fechaModificacion: new Date().toISOString(),
-        activo: true
+        id: 'contrib-003',
+        cuit: '30-98765432-1',
+        razonSocial: 'LOPEZ CARLOS SRL',
+        nombreFantasia: 'Servicios López',
+        domicilioFiscal: {
+            calle: 'Belgrano',
+            numero: '890',
+            ciudad: 'Rosario',
+            provincia: 'Santa Fe',
+            codigoPostal: 'S2000'
+        },
+        email: 'admin@servicioslopez.com',
+        telefono: '0341-234-5678',
+        categoriaFiscal: 'Responsable Inscripto',
+        estado: 'Suspendido',
+        fechaInscripcion: '2023-11-10T16:45:00Z',
+        ultimaActualizacion: '2025-01-25T11:15:00Z',
+        complianceScore: 45,
+        riskLevel: 'High'
     }
 ];
 
@@ -79,9 +104,9 @@ router.use((req, res, next) => {
 // ===================================================
 const contributorValidation = [
     body('cuit')
-        .isLength({ min: 11, max: 11 })
-        .matches(/^\d{11}$/)
-        .withMessage('CUIT debe tener 11 dígitos numéricos'),
+        .isLength({ min: 13, max: 13 })
+        .matches(/^\d{2}-\d{8}-\d{1}$/)
+        .withMessage('CUIT debe tener formato XX-XXXXXXXX-X'),
 
     body('razonSocial')
         .isLength({ min: 2, max: 200 })
@@ -99,15 +124,45 @@ const contributorValidation = [
         .matches(/^[\+]?[0-9\-\(\)\s]+$/)
         .withMessage('Teléfono debe contener solo números y caracteres válidos'),
 
-    body('categoria')
+    body('categoriaFiscal')
         .optional()
-        .isIn(['responsable_inscripto', 'monotributo', 'exento', 'no_categorizado'])
-        .withMessage('Categoría debe ser válida'),
+        .isIn(['Monotributista', 'Responsable Inscripto', 'Exento'])
+        .withMessage('Categoría fiscal debe ser válida'),
 
-    body('situacionAfip')
+    body('estado')
         .optional()
-        .isIn(['activo', 'dado_de_baja', 'suspendido', 'no_inscripto'])
-        .withMessage('Situación AFIP debe ser válida')
+        .isIn(['Activo', 'Suspendido', 'Dado de baja'])
+        .withMessage('Estado debe ser válido'),
+
+    body('domicilioFiscal.calle')
+        .optional()
+        .isLength({ min: 2, max: 100 })
+        .trim()
+        .withMessage('Calle debe tener entre 2 y 100 caracteres'),
+
+    body('domicilioFiscal.numero')
+        .optional()
+        .isLength({ min: 1, max: 20 })
+        .trim()
+        .withMessage('Número debe tener entre 1 y 20 caracteres'),
+
+    body('domicilioFiscal.ciudad')
+        .optional()
+        .isLength({ min: 2, max: 50 })
+        .trim()
+        .withMessage('Ciudad debe tener entre 2 y 50 caracteres'),
+
+    body('domicilioFiscal.provincia')
+        .optional()
+        .isLength({ min: 2, max: 50 })
+        .trim()
+        .withMessage('Provincia debe tener entre 2 y 50 caracteres'),
+
+    body('domicilioFiscal.codigoPostal')
+        .optional()
+        .isLength({ min: 4, max: 10 })
+        .trim()
+        .withMessage('Código postal debe tener entre 4 y 10 caracteres')
 ];
 
 const importValidation = [
@@ -150,26 +205,31 @@ function handleValidationErrors(req, res) {
  * Generar ID único para nuevos contribuyentes
  */
 function generateId() {
-    return Math.max(...mockContributors.map(c => c.id), 0) + 1;
+    return `contrib-${Date.now()}`;
 }
 
 /**
- * Validar CUIT (algoritmo básico)
+ * Validar CUIT (algoritmo básico) - Acepta formato XX-XXXXXXXX-X
  */
 function isValidCuit(cuit) {
-    if (!cuit || cuit.length !== 11) return false;
+    if (!cuit) return false;
+    
+    // Eliminar guiones para validación
+    const cleanCuit = cuit.replace(/-/g, '');
+    
+    if (cleanCuit.length !== 11) return false;
 
     const multipliers = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
     let sum = 0;
 
     for (let i = 0; i < 10; i++) {
-        sum += parseInt(cuit[i]) * multipliers[i];
+        sum += parseInt(cleanCuit[i]) * multipliers[i];
     }
 
     const remainder = sum % 11;
     const checkDigit = remainder < 2 ? remainder : 11 - remainder;
 
-    return checkDigit === parseInt(cuit[10]);
+    return checkDigit === parseInt(cleanCuit[10]);
 }
 
 // ===================================================
@@ -198,15 +258,15 @@ router.get('/',
             .trim()
             .withMessage('Search debe tener entre 2 y 100 caracteres'),
 
-        query('categoria')
+        query('categoriaFiscal')
             .optional()
-            .isIn(['responsable_inscripto', 'monotributo', 'exento', 'no_categorizado'])
-            .withMessage('Categoría debe ser válida'),
+            .isIn(['Monotributista', 'Responsable Inscripto', 'Exento'])
+            .withMessage('Categoría fiscal debe ser válida'),
 
-        query('situacionAfip')
+        query('estado')
             .optional()
-            .isIn(['activo', 'dado_de_baja', 'suspendido', 'no_inscripto'])
-            .withMessage('Situación AFIP debe ser válida')
+            .isIn(['Activo', 'Suspendido', 'Dado de baja'])
+            .withMessage('Estado debe ser válido')
     ],
     (req, res) => {
         try {
@@ -217,13 +277,13 @@ router.get('/',
                 page = 1,
                 limit = 20,
                 search,
-                categoria,
-                situacionAfip,
+                categoriaFiscal,
+                estado,
                 sortBy = 'razonSocial',
                 sortOrder = 'asc'
             } = req.query;
 
-            let filteredContributors = mockContributors.filter(c => c.activo);
+            let filteredContributors = [...mockContributors];
 
             // Aplicar filtros
             if (search) {
@@ -231,16 +291,17 @@ router.get('/',
                 filteredContributors = filteredContributors.filter(c =>
                     c.razonSocial.toLowerCase().includes(searchTerm) ||
                     c.cuit.includes(searchTerm) ||
-                    (c.email && c.email.toLowerCase().includes(searchTerm))
+                    (c.email && c.email.toLowerCase().includes(searchTerm)) ||
+                    (c.nombreFantasia && c.nombreFantasia.toLowerCase().includes(searchTerm))
                 );
             }
 
-            if (categoria) {
-                filteredContributors = filteredContributors.filter(c => c.categoria === categoria);
+            if (categoriaFiscal) {
+                filteredContributors = filteredContributors.filter(c => c.categoriaFiscal === categoriaFiscal);
             }
 
-            if (situacionAfip) {
-                filteredContributors = filteredContributors.filter(c => c.situacionAfip === situacionAfip);
+            if (estado) {
+                filteredContributors = filteredContributors.filter(c => c.estado === estado);
             }
 
             // Ordenamiento
@@ -297,9 +358,9 @@ router.get('/',
 router.get('/:cuit',
     [
         param('cuit')
-            .isLength({ min: 11, max: 11 })
-            .matches(/^\d{11}$/)
-            .withMessage('CUIT debe tener 11 dígitos numéricos')
+            .isLength({ min: 13, max: 13 })
+            .matches(/^\d{2}-\d{8}-\d{1}$/)
+            .withMessage('CUIT debe tener formato XX-XXXXXXXX-X')
     ],
     (req, res) => {
         try {
@@ -307,7 +368,7 @@ router.get('/:cuit',
             if (validationError) return;
 
             const { cuit } = req.params;
-            const contributor = mockContributors.find(c => c.cuit === cuit && c.activo);
+            const contributor = mockContributors.find(c => c.cuit === cuit);
 
             if (!contributor) {
                 return res.status(404).json({
@@ -371,9 +432,11 @@ router.post('/',
             const newContributor = {
                 id: generateId(),
                 ...contributorData,
-                fechaCreacion: new Date().toISOString(),
-                fechaModificacion: new Date().toISOString(),
-                activo: true
+                estado: contributorData.estado || 'Activo',
+                fechaInscripcion: new Date().toISOString(),
+                ultimaActualizacion: new Date().toISOString(),
+                complianceScore: 100,
+                riskLevel: 'Low'
             };
 
             mockContributors.push(newContributor);
@@ -404,9 +467,9 @@ router.post('/',
 router.put('/:cuit',
     [
         param('cuit')
-            .isLength({ min: 11, max: 11 })
-            .matches(/^\d{11}$/)
-            .withMessage('CUIT debe tener 11 dígitos numéricos'),
+            .isLength({ min: 13, max: 13 })
+            .matches(/^\d{2}-\d{8}-\d{1}$/)
+            .withMessage('CUIT debe tener formato XX-XXXXXXXX-X'),
         ...contributorValidation.filter(validation =>
             !validation.builder.fields.includes('cuit') // Excluir validación de CUIT en update
         )
@@ -419,7 +482,7 @@ router.put('/:cuit',
             const { cuit } = req.params;
             const updateData = req.body;
 
-            const contributorIndex = mockContributors.findIndex(c => c.cuit === cuit && c.activo);
+            const contributorIndex = mockContributors.findIndex(c => c.cuit === cuit);
             if (contributorIndex === -1) {
                 return res.status(404).json({
                     success: false,
@@ -433,7 +496,7 @@ router.put('/:cuit',
                 ...mockContributors[contributorIndex],
                 ...updateData,
                 cuit, // Mantener CUIT original
-                fechaModificacion: new Date().toISOString()
+                ultimaActualizacion: new Date().toISOString()
             };
 
             res.json({
@@ -462,9 +525,9 @@ router.put('/:cuit',
 router.delete('/:cuit',
     [
         param('cuit')
-            .isLength({ min: 11, max: 11 })
-            .matches(/^\d{11}$/)
-            .withMessage('CUIT debe tener 11 dígitos numéricos')
+            .isLength({ min: 13, max: 13 })
+            .matches(/^\d{2}-\d{8}-\d{1}$/)
+            .withMessage('CUIT debe tener formato XX-XXXXXXXX-X')
     ],
     (req, res) => {
         try {
@@ -473,7 +536,7 @@ router.delete('/:cuit',
 
             const { cuit } = req.params;
 
-            const contributorIndex = mockContributors.findIndex(c => c.cuit === cuit && c.activo);
+            const contributorIndex = mockContributors.findIndex(c => c.cuit === cuit);
             if (contributorIndex === -1) {
                 return res.status(404).json({
                     success: false,
@@ -482,9 +545,8 @@ router.delete('/:cuit',
                 });
             }
 
-            // Soft delete
-            mockContributors[contributorIndex].activo = false;
-            mockContributors[contributorIndex].fechaModificacion = new Date().toISOString();
+            // Remove from array (real delete for demo)
+            mockContributors.splice(contributorIndex, 1);
 
             res.json({
                 success: true,

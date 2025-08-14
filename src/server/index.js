@@ -21,6 +21,13 @@ import { GroqClient } from './services/groq-client.js';
 import { AfipClient } from './services/afip-client.js';
 import { NotificationService } from './services/notification-service.js';
 
+// Importar servicios de compliance
+import { ComplianceMonitor } from './services/compliance-monitor.js';
+import { RiskScoringEngine } from './services/risk-scoring-engine.js';
+import { AlertManager } from './services/alert-manager.js';
+import { EscalationEngine } from './services/escalation-engine.js';
+import { EmailService } from './services/email-service.js';
+
 // Importar nuevos servicios para contributors
 import { DatabaseService } from './services/database-service.js';
 import { ContributorsModel } from './models/contributors-model.js';
@@ -43,6 +50,10 @@ import authRoutes from './routes/auth-routes.js';
 
 // Importar nueva ruta de contributors
 import contributorsRoutes from './routes/contributors.js';
+
+// Importar rutas de compliance y notificaciones
+import { setupComplianceRoutes } from './routes/compliance.js';
+import { setupNotificationRoutes } from './routes/notifications.js';
 
 // Función para asegurar que existe el directorio de uploads
 async function ensureUploadDirectory() {
@@ -117,12 +128,40 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // CONFIGURACIÓN CORREGIDA CON URL OFICIAL DE AFIP
+// Función para parsear los orígenes permitidos
+function parseAllowedOrigins(originsString) {
+    if (!originsString) return ['http://localhost:3030', 'http://localhost:3001'];
+    return originsString.split(',').map(origin => origin.trim()).filter(Boolean);
+}
+
 const config = {
     port: process.env.PORT || 8080,
     host: process.env.HOST || '0.0.0.0',
     cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
-        credentials: true
+        origin: function(origin, callback) {
+            // Permitir requests sin origin (ej: Postman, curl, mismo origen)
+            if (!origin) return callback(null, true);
+            
+            const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS);
+            
+            // Verificar si el origen está en la lista de permitidos
+            if (allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else if (process.env.NODE_ENV === 'development') {
+                // En desarrollo, ser más permisivo
+                console.warn(`⚠️ CORS: Origen no configurado pero permitido en desarrollo: ${origin}`);
+                callback(null, true);
+            } else {
+                callback(new Error(`CORS: Origen no permitido: ${origin}`));
+            }
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+        exposedHeaders: ['Content-Range', 'X-Content-Range'],
+        maxAge: 86400, // 24 horas
+        preflightContinue: false,
+        optionsSuccessStatus: 204
     },
     afip: {
         baseURL: process.env.AFIP_BASE_URL || 'https://awshomo.afip.gov.ar/sr-padron/v2/persona',
@@ -161,8 +200,34 @@ const notificationConfig = {
 // Crear aplicación Express
 const app = express();
 
-// Configurar middleware CORS
+// Configurar middleware CORS con manejo mejorado
 app.use(cors(config.cors));
+
+// Middleware adicional para asegurar headers CORS en todas las respuestas
+app.use((req, res, next) => {
+    // Obtener el origen de la request
+    const origin = req.headers.origin || req.headers.referer;
+    
+    if (origin) {
+        const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS);
+        
+        // Si el origen está permitido o estamos en desarrollo, agregar headers
+        if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+            res.header('Access-Control-Allow-Origin', origin);
+            res.header('Access-Control-Allow-Credentials', 'true');
+        }
+    }
+    
+    // Headers para preflight
+    if (req.method === 'OPTIONS') {
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+        res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+        res.header('Access-Control-Max-Age', '86400');
+        return res.sendStatus(204);
+    }
+    
+    next();
+});
 
 // Middleware para parsear JSON
 app.use(express.json({ limit: '10mb' }));
@@ -205,17 +270,28 @@ const afipClient = new AfipClient({
     mockMode: config.afipMockMode
 });
 
+// Los servicios de compliance se inicializan en startServer() después de la DB
+
 let groqClient = null;
 
 // Inicializar Groq si está configurado
 if (process.env.GROQ_API_KEY) {
     try {
+        // Crear logger simple si no existe
+        const logger = {
+            info: (...args) => console.log(...args),
+            error: (...args) => console.error(...args),
+            warn: (...args) => console.warn(...args),
+            debug: (...args) => console.debug(...args)
+        };
+        
         groqClient = new GroqClient({
-            apiKey: process.env.GROQ_API_KEY,
-            model: process.env.GROQ_MODEL || 'llama-3.1-8b-instant',
-            maxTokens: parseInt(process.env.GROQ_MAX_TOKENS) || 1000,
-            temperature: parseFloat(process.env.GROQ_TEMPERATURE) || 0.7
-        });
+            groqApiKey: process.env.GROQ_API_KEY,
+            groqModel: process.env.GROQ_MODEL || 'llama3-70b-8192',
+            groqMaxTokens: parseInt(process.env.GROQ_MAX_TOKENS) || 1000,
+            groqTemperature: parseFloat(process.env.GROQ_TEMPERATURE) || 0.7,
+            groqTimeout: parseInt(process.env.GROQ_TIMEOUT) || 30000
+        }, logger);
 
         await groqClient.initialize();
         console.log('🤖 Groq AI cliente inicializado correctamente');
@@ -228,6 +304,8 @@ if (process.env.GROQ_API_KEY) {
     console.log('ℹ️  Groq API key no configurada - funcionalidad de chat deshabilitada');
 }
 
+// Los servicios se configuran en app.locals dentro de startServer()
+
 // ==============================================
 // RUTAS DE LA API
 // ==============================================
@@ -238,6 +316,8 @@ app.use('/api/contributors', contributorsRoutes);
 // Rutas existentes
 app.use('/api/groq', groqChatRoutes);
 app.use('/api/ocr', ocrRoutes);
+
+// Las rutas de compliance y notificaciones se configuran en startServer() después de la inicialización de la DB
 
 // ==============================================
 // HEALTH CHECK MEJORADO
@@ -452,6 +532,40 @@ app.get('/health', async (req, res) => {
 // ==============================================
 // ENDPOINT DE DEBUGGING
 // ==============================================
+
+// Endpoint para verificar CORS
+app.get('/api/cors-test', (req, res) => {
+    const origin = req.headers.origin || req.headers.referer || 'No origin header';
+    const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS);
+    
+    res.json({
+        success: true,
+        message: 'CORS test endpoint',
+        requestOrigin: origin,
+        allowedOrigins: allowedOrigins,
+        isAllowed: allowedOrigins.includes(origin) || !req.headers.origin,
+        headers: {
+            'access-control-allow-origin': res.get('Access-Control-Allow-Origin'),
+            'access-control-allow-credentials': res.get('Access-Control-Allow-Credentials')
+        },
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Endpoint POST para verificar CORS con datos
+app.post('/api/cors-test', (req, res) => {
+    const origin = req.headers.origin || req.headers.referer || 'No origin header';
+    const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN || process.env.ALLOWED_ORIGINS);
+    
+    res.json({
+        success: true,
+        message: 'CORS POST test successful',
+        requestOrigin: origin,
+        isAllowed: allowedOrigins.includes(origin) || !req.headers.origin,
+        receivedData: req.body,
+        timestamp: new Date().toISOString()
+    });
+});
 
 app.get('/debug/services', (req, res) => {
     const debug = {
@@ -913,21 +1027,9 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Middleware para rutas no encontradas
-app.use('/api/*', (req, res) => {
-    res.status(404).json({
-        success: false,
-        error: 'Endpoint no encontrado',
-        path: req.path,
-        method: req.method,
-        timestamp: new Date().toISOString()
-    });
-});
+// Middleware para rutas no encontradas - Se configura al final en startServer()
 
-// Servir el cliente React para todas las rutas no-API
-app.get('*', (req, res) => {
-    res.sendFile(join(__dirname, '../client/dist/index.html'));
-});
+// Servir el cliente React - Se configura al final en startServer()
 
 // ==============================================
 // INICIALIZACIÓN DEL SERVIDOR
@@ -946,8 +1048,152 @@ async function startServer() {
         // Inicializar base de datos
         await initializeDatabase();
 
+        // Inicializar servicios de compliance DESPUÉS de la base de datos
+        console.log('🔧 Inicializando servicios de compliance...');
+        const emailService = new EmailService(notificationConfig.email);
+        const riskScoringEngine = new RiskScoringEngine();
+        const alertManager = new AlertManager(DatabaseService.db, notificationService);
+        const escalationEngine = new EscalationEngine(notificationService, emailService);
+        const complianceMonitor = new ComplianceMonitor(DatabaseService.db, afipClient, riskScoringEngine, alertManager);
+        console.log('✅ Servicios de compliance inicializados');
+
+        // Configurar servicios en app.locals para acceso en rutas
+        app.locals.groqClient = groqClient;
+        app.locals.afipClient = afipClient;
+        app.locals.notificationService = notificationService;
+        app.locals.complianceMonitor = complianceMonitor;
+        app.locals.riskScoringEngine = riskScoringEngine;
+        app.locals.alertManager = alertManager;
+        app.locals.escalationEngine = escalationEngine;
+        app.locals.emailService = emailService;
+        app.locals.database = DatabaseService;
+        app.locals.logger = {
+            info: (...args) => console.log(...args),
+            error: (...args) => console.error(...args),
+            warn: (...args) => console.warn(...args),
+            debug: (...args) => console.debug(...args)
+        };
+        console.log('✅ Servicios configurados en app.locals');
+
+        // Configurar rutas que dependen de la base de datos DESPUÉS de la inicialización
+        console.log('🔧 Configurando rutas de compliance y notificaciones...');
+        const complianceRoutes = setupComplianceRoutes(complianceMonitor, riskScoringEngine, alertManager, DatabaseService.db);
+        app.use('/api/compliance', complianceRoutes);
+        
+        const notificationRoutes = setupNotificationRoutes(notificationService, DatabaseService.db);
+        app.use('/api/notifications', notificationRoutes);
+        console.log('✅ Rutas de compliance y notificaciones configuradas');
+
+        // Configurar middleware catch-all para rutas API no encontradas AL FINAL
+        app.use('/api/*', (req, res) => {
+            res.status(404).json({
+                success: false,
+                error: 'Endpoint no encontrado',
+                path: req.path,
+                method: req.method,
+                timestamp: new Date().toISOString()
+            });
+        });
+        
+        // Servir el cliente React para todas las rutas no-API AL FINAL
+        app.get('*', (req, res) => {
+            res.sendFile(join(__dirname, '../client/dist/index.html'));
+        });
+        console.log('✅ Middleware catch-all y cliente React configurados');
+
         // Inicializar servicios de cache
         CacheService.initialize();
+
+        // ==============================================
+        // FUNCIONES DE MONITOREO DE COMPLIANCE
+        // ==============================================
+
+        let complianceMonitorInterval = null;
+
+        async function startComplianceMonitoring() {
+            try {
+                console.log('🔍 Iniciando servicio de monitoreo de compliance...');
+
+                // Verificar que los servicios estén inicializados
+                if (!complianceMonitor || !DatabaseService.isInitialized) {
+                    console.warn('⚠️ Servicios de compliance no completamente inicializados');
+                    return;
+                }
+
+                // Ejecutar check inicial
+                setTimeout(async () => {
+                    await runScheduledComplianceChecks();
+                }, 30000); // Esperar 30 segundos después del startup
+
+                // Programar checks cada 15 minutos
+                complianceMonitorInterval = setInterval(async () => {
+                    await runScheduledComplianceChecks();
+                }, 15 * 60 * 1000);
+
+                console.log('✅ Servicio de monitoreo de compliance iniciado');
+
+            } catch (error) {
+                console.error('❌ Error iniciando monitoreo de compliance:', error);
+            }
+        }
+
+        async function runScheduledComplianceChecks() {
+            try {
+                console.log('🔄 Ejecutando checks de compliance programados...');
+
+                // Obtener contribuyentes activos
+                const query = `
+                    SELECT DISTINCT c.cuit, c.business_name 
+                    FROM contributors c
+                    LEFT JOIN compliance_monitoring_config cmc ON c.cuit = cmc.cuit
+                    WHERE c.deleted_at IS NULL 
+                    AND c.active = 1
+                    AND (cmc.enabled IS NULL OR cmc.enabled = 1)
+                    LIMIT 10
+                `;
+
+                const db = await DatabaseService.getConnection();
+                const contributors = await db.all(query);
+                
+                if (contributors.length === 0) {
+                    console.log('ℹ️ No hay contribuyentes activos para monitorear');
+                    return;
+                }
+
+                console.log(`📊 Monitoreando ${contributors.length} contribuyentes`);
+
+                // Ejecutar checks para cada contribuyente
+                const results = await Promise.allSettled(
+                    contributors.map(async (contributor) => {
+                        try {
+                            return await complianceMonitor.performComplianceCheck(
+                                contributor.cuit,
+                                'scheduled'
+                            );
+                        } catch (error) {
+                            console.error(`Error en check para ${contributor.cuit}:`, error.message);
+                            throw error;
+                        }
+                    })
+                );
+
+                const successful = results.filter(r => r.status === 'fulfilled').length;
+                const failed = results.filter(r => r.status === 'rejected').length;
+                
+                console.log(`✅ Checks completados: ${successful} exitosos, ${failed} fallidos`);
+
+            } catch (error) {
+                console.error('❌ Error en checks programados:', error);
+            }
+        }
+
+        function stopComplianceMonitoring() {
+            if (complianceMonitorInterval) {
+                clearInterval(complianceMonitorInterval);
+                complianceMonitorInterval = null;
+                console.log('🛑 Servicio de monitoreo de compliance detenido');
+            }
+        }
 
         // Crear servidor HTTP
         const server = createServer(app);
@@ -1066,11 +1312,15 @@ async function startServer() {
 
             console.log('\n✨ Sistema listo para recibir requests!');
             console.log('=====================================\n');
+
+            // Iniciar servicio de monitoreo de compliance
+            startComplianceMonitoring();
         });
 
         // Manejo de cierre graceful
         process.on('SIGTERM', () => {
             console.log('🛑 SIGTERM recibido, cerrando servidor...');
+            stopComplianceMonitoring();
             server.close(async () => {
                 console.log('🔌 Servidor HTTP cerrado');
 
@@ -1087,6 +1337,7 @@ async function startServer() {
 
         process.on('SIGINT', () => {
             console.log('\n🛑 SIGINT recibido, cerrando servidor...');
+            stopComplianceMonitoring();
             server.close(async () => {
                 console.log('🔌 Servidor HTTP cerrado');
 

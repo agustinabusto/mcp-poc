@@ -1,6 +1,7 @@
 // src/client/components/UserManagement/index.jsx
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, Search, Filter, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import SimpleUserForm from './SimpleUserForm.jsx';
 
 // Mock de datos - reemplazar con API real
 const mockUsers = [
@@ -55,6 +56,22 @@ export const UserManagement = () => {
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [notification, setNotification] = useState(null);
+
+    // Listener para el evento personalizado
+    useEffect(() => {
+        console.log('🟢 UserManagement - Configurando listener createUser');
+        
+        const handleCreateUserEvent = () => {
+            console.log('🟢 UserManagement - Evento createUser recibido');
+            setShowCreateForm(true);
+        };
+
+        document.addEventListener('createUser', handleCreateUserEvent);
+        return () => {
+            console.log('🟢 UserManagement - Removiendo listener createUser');
+            document.removeEventListener('createUser', handleCreateUserEvent);
+        };
+    }, []);
 
     const roles = ['Admin', 'Manager', 'Operator', 'Viewer'];
 
@@ -149,7 +166,7 @@ export const UserManagement = () => {
     // Si está mostrando formulario de creación
     if (showCreateForm) {
         return (
-            <UserForm
+            <SimpleUserForm
                 onSave={handleCreateUser}
                 onCancel={() => setShowCreateForm(false)}
                 title="Crear Nuevo Usuario"
@@ -160,7 +177,7 @@ export const UserManagement = () => {
     // Si está editando un usuario
     if (editingUser) {
         return (
-            <UserForm
+            <SimpleUserForm
                 user={editingUser}
                 onSave={handleEditUser}
                 onCancel={() => setEditingUser(null)}
@@ -518,102 +535,3 @@ export const UserManagement = () => {
     );
 };
 
-// Componente de formulario simple (placeholder)
-const UserForm = ({ user, onSave, onCancel, title }) => {
-    const [formData, setFormData] = useState({
-        firstName: user?.firstName || '',
-        lastName: user?.lastName || '',
-        email: user?.email || '',
-        role: user?.role || 'Viewer'
-    });
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-        onSave(formData);
-    };
-
-    return (
-        <div className="p-6 bg-gray-50 min-h-screen">
-            <div className="max-w-2xl mx-auto">
-                <div className="bg-white rounded-lg shadow-sm p-6">
-                    <h2 className="text-xl font-bold text-gray-900 mb-6">{title}</h2>
-
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Nombre
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.firstName}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, firstName: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Apellido
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.lastName}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, lastName: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Email
-                            </label>
-                            <input
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                required
-                            />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                                Rol
-                            </label>
-                            <select
-                                value={formData.role}
-                                onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            >
-                                <option value="Viewer">Viewer</option>
-                                <option value="Operator">Operator</option>
-                                <option value="Manager">Manager</option>
-                                <option value="Admin">Admin</option>
-                            </select>
-                        </div>
-
-                        <div className="flex space-x-3 pt-6">
-                            <button
-                                type="button"
-                                onClick={onCancel}
-                                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button
-                                type="submit"
-                                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                            >
-                                Guardar
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    );
-};

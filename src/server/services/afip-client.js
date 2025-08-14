@@ -405,6 +405,94 @@ export class AfipClient extends EventEmitter {
     }
   }
 
+  /**
+   * Obtener estado fiscal del contribuyente
+   */
+  async getFiscalStatus(cuit) {
+    try {
+      if (this.mockMode) {
+        // Simular respuesta de estado fiscal
+        return {
+          cuit: cuit,
+          active: true,
+          status: 'activo',
+          category: 'responsable_inscripto',
+          registrationDate: '2020-01-01',
+          lastUpdate: new Date().toISOString(),
+          source: 'mock'
+        };
+      }
+
+      // En modo real, usar getTaxpayerInfo como base
+      const taxpayerInfo = await this.getTaxpayerInfo(cuit);
+      
+      if (!taxpayerInfo.success) {
+        throw new Error(taxpayerInfo.error);
+      }
+
+      // Mapear datos a formato de estado fiscal
+      return {
+        cuit: cuit,
+        active: taxpayerInfo.data.situacionAfip === 'activo',
+        status: taxpayerInfo.data.situacionAfip || 'unknown',
+        category: taxpayerInfo.data.categoria || 'unknown',
+        registrationDate: taxpayerInfo.data.fechaRegistro || null,
+        lastUpdate: new Date().toISOString(),
+        source: 'afip'
+      };
+
+    } catch (error) {
+      this.logger?.error(`Error getting fiscal status for ${cuit}:`, error);
+      throw new Error(`Failed to get fiscal status: ${error.message}`);
+    }
+  }
+
+  /**
+   * Obtener registro de IVA del contribuyente
+   */
+  async getVATRegistration(cuit) {
+    try {
+      if (this.mockMode) {
+        // Simular respuesta de registro de IVA
+        return {
+          cuit: cuit,
+          registered: true,
+          category: 'responsable_inscripto',
+          vatNumber: cuit,
+          registrationDate: '2020-01-01',
+          status: 'active',
+          lastUpdate: new Date().toISOString(),
+          source: 'mock'
+        };
+      }
+
+      // En modo real, usar getTaxpayerInfo como base
+      const taxpayerInfo = await this.getTaxpayerInfo(cuit);
+      
+      if (!taxpayerInfo.success) {
+        throw new Error(taxpayerInfo.error);
+      }
+
+      // Mapear datos a formato de registro IVA
+      const isVATRegistered = taxpayerInfo.data.categoria?.toLowerCase().includes('responsable');
+      
+      return {
+        cuit: cuit,
+        registered: isVATRegistered,
+        category: taxpayerInfo.data.categoria || 'unknown',
+        vatNumber: isVATRegistered ? cuit : null,
+        registrationDate: taxpayerInfo.data.fechaRegistro || null,
+        status: taxpayerInfo.data.situacionAfip === 'activo' ? 'active' : 'inactive',
+        lastUpdate: new Date().toISOString(),
+        source: 'afip'
+      };
+
+    } catch (error) {
+      this.logger?.error(`Error getting VAT registration for ${cuit}:`, error);
+      throw new Error(`Failed to get VAT registration: ${error.message}`);
+    }
+  }
+
   async getStatus() {
     return {
       connectionStatus: this.connectionStatus,

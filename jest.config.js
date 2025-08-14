@@ -1,13 +1,13 @@
 export default {
   testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.js'],
+  extensionsToTreatAsEsm: ['.jsx'],
   globals: {
     'ts-jest': {
       useESM: true
     }
   },
-  moduleNameMapping: {
-    '^(\.{1,2}/.*)\.js$': '$1'
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.(js|jsx)$': '$1'
   },
   transform: {},
   testMatch: [

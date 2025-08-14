@@ -1,9 +1,15 @@
 // src/client/config/constants.js
 // Configuración de la aplicación
 
-// URLs base
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+// Importar configuración de API
+import { API_CONFIG, getApiUrl } from './api.js';
+
+// URLs base - usar configuración centralizada
+export const API_BASE_URL = API_CONFIG.baseURL ? `${API_CONFIG.baseURL}/api` : '/api';
 export const WS_BASE_URL = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8080';
+
+// Re-exportar funciones de API para compatibilidad
+export { getApiUrl, api, testServerConnection } from './api.js';
 
 // Endpoints de la API
 export const API_ENDPOINTS = {

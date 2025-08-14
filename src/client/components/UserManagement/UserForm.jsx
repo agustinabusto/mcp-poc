@@ -3,22 +3,30 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { UserService } from '../../services/userService';
 import { useAuth } from '../../hooks/useAuth';
-import { LoadingSpinner } from '../UI/LoadingSpinner';
-import { Toast } from '../UI/Toast';
+import { LoadingSpinner } from '../common/LoadingSpinner';
+import { Toast } from '../common/Toast';
 
-export const UserForm = () => {
-    const { id } = useParams();
-    const navigate = useNavigate();
-    const { user: currentUser } = useAuth();
-    const isEdit = !!id;
+export const UserForm = ({ 
+    userId = null, 
+    onCancel = null, 
+    onSave = null,
+    user = null 
+}) => {
+    const { id: routeId } = useParams?.() || {};
+    const navigate = useNavigate?.();
+    const { user: currentUser } = useAuth?.() || { user: null };
+    
+    // Usar props si están disponibles, sino usar router params
+    const id = userId || routeId;
+    const isEdit = !!(id || user);
 
     const [formData, setFormData] = useState({
-        firstName: '',
-        lastName: '',
-        email: '',
-        role: 'Viewer',
-        permissions: [],
-        isActive: true
+        firstName: user?.firstName || '',
+        lastName: user?.lastName || '',
+        email: user?.email || '',
+        role: user?.role || 'Viewer',
+        permissions: user?.permissions || [],
+        isActive: user?.isActive !== false
     });
 
     const [loading, setLoading] = useState(false);
@@ -130,6 +138,13 @@ export const UserForm = () => {
         try {
             setSaving(true);
 
+            // Si hay un callback onSave, usarlo (modo standalone)
+            if (onSave) {
+                await onSave(formData);
+                return;
+            }
+
+            // Si no hay callback, usar servicios normales (modo router)
             if (isEdit) {
                 await UserService.updateUser(id, formData);
                 setToast({
@@ -145,7 +160,9 @@ export const UserForm = () => {
             }
 
             setTimeout(() => {
-                navigate('/users');
+                if (navigate) {
+                    navigate('/users');
+                }
             }, 1500);
 
         } catch (error) {
@@ -159,11 +176,11 @@ export const UserForm = () => {
     };
 
     const canEditRole = () => {
-        return currentUser.role === 'Admin' && (!isEdit || formData.id !== currentUser.id);
+        return currentUser?.role === 'Admin' && (!isEdit || formData.id !== currentUser?.id);
     };
 
     const canEditPermissions = () => {
-        return currentUser.role === 'Admin';
+        return currentUser?.role === 'Admin';
     };
 
     if (loading) {
@@ -177,7 +194,7 @@ export const UserForm = () => {
                 <div className="mb-6">
                     <div className="flex items-center space-x-4 mb-4">
                         <button
-                            onClick={() => navigate('/users')}
+                            onClick={() => onCancel ? onCancel() : navigate?.('/users')}
                             className="text-gray-600 hover:text-gray-900"
                         >
                             ← Volver
@@ -342,7 +359,7 @@ export const UserForm = () => {
                         <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
                             <button
                                 type="button"
-                                onClick={() => navigate('/users')}
+                                onClick={() => onCancel ? onCancel() : navigate?.('/users')}
                                 className="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             >
                                 Cancelar

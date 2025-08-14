@@ -19,7 +19,7 @@ export class DatabaseService {
                 return DatabaseService.db;
             }
 
-            const dbPath = process.env.DATABASE_PATH || './data/afip_monitor.db';
+            const dbPath = process.env.DATABASE_PATH || '/home/agustina/snarx/masterIA/afip-monitor-mcp/data/afip_monitor.db';
 
             // Asegurar que el directorio existe
             const dbDir = path.dirname(dbPath);
@@ -41,13 +41,51 @@ export class DatabaseService {
                 PRAGMA temp_store = MEMORY;
             `);
 
+            // Ejecutar schema de compliance monitoring si no existe
+            await DatabaseService.initializeComplianceSchema();
+
             DatabaseService.isInitialized = true;
             DatabaseService.logger.info(`Database initialized: ${dbPath}`);
+            console.log(`🗂️  DEBUG: Absolute database path: ${path.resolve(dbPath)}`);
 
             return DatabaseService.db;
 
         } catch (error) {
             DatabaseService.logger.error('Database initialization error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Inicializar schema de compliance monitoring
+     */
+    static async initializeComplianceSchema() {
+        try {
+            // Verificar si las tablas ya existen
+            const tables = await DatabaseService.db.get(`
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='compliance_monitoring_config'
+            `);
+
+            if (!tables) {
+                DatabaseService.logger.info('Inicializando schema de compliance monitoring...');
+                
+                // Leer y ejecutar el schema
+                const schemaPath = path.join(process.cwd(), 'src', 'database', 'schemas', 'compliance-monitoring-tables.sql');
+                
+                if (fs.existsSync(schemaPath)) {
+                    const schemaSQL = fs.readFileSync(schemaPath, 'utf8');
+                    await DatabaseService.db.exec(schemaSQL);
+                    DatabaseService.logger.info('✅ Schema de compliance monitoring inicializado');
+                } else {
+                    DatabaseService.logger.warn('⚠️ Archivo de schema no encontrado:', schemaPath);
+                }
+            } else {
+                DatabaseService.logger.info('✅ Schema de compliance monitoring ya existe');
+            }
+
+        } catch (error) {
+            DatabaseService.logger.error('Error inicializando schema de compliance:', error);
             throw error;
         }
     }

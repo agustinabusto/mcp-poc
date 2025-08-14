@@ -58,7 +58,7 @@ router.post('/chat', groqRateLimit, chatValidation, async (req, res) => {
         } = req.body;
 
         // Obtener servicios del contexto de la aplicación
-        const { groqClient, afipClient, logger } = req.app.locals;
+        const { groqClient, afipClient, logger = console } = req.app.locals;
 
         if (!groqClient.isInitialized) {
             return res.status(503).json({
@@ -139,7 +139,7 @@ router.post('/chat', groqRateLimit, chatValidation, async (req, res) => {
 // GET /api/groq/status - Estado del servicio Groq
 router.get('/status', async (req, res) => {
     try {
-        const { groqClient, logger } = req.app.locals;
+        const { groqClient, logger = console } = req.app.locals;
 
         if (!groqClient) {
             return res.status(503).json({
@@ -182,7 +182,7 @@ router.get('/status', async (req, res) => {
         });
 
     } catch (error) {
-        const { logger } = req.app.locals;
+        const { logger = console } = req.app.locals;
         logger.error('Error obteniendo status Groq:', error);
 
         res.status(500).json({
@@ -209,7 +209,7 @@ router.post('/validate-cuit', groqRateLimit, [
         }
 
         const { cuit } = req.body;
-        const { groqClient, afipClient, logger } = req.app.locals;
+        const { groqClient, afipClient, logger = console } = req.app.locals;
 
         // Obtener información de AFIP
         const afipInfo = await afipClient.getTaxpayerInfo(cuit);
@@ -240,7 +240,7 @@ Proporciona un resumen del estado de compliance y recomendaciones.`;
         });
 
     } catch (error) {
-        const { logger } = req.app.locals;
+        const { logger = console } = req.app.locals;
         logger.error('Error validando CUIT con IA:', error);
 
         res.status(500).json({
@@ -298,7 +298,7 @@ router.get('/models', async (req, res) => {
         });
 
     } catch (error) {
-        const { logger } = req.app.locals;
+        const { logger = console } = req.app.locals;
         logger.error('Error obteniendo modelos:', error);
 
         res.status(500).json({

@@ -33,7 +33,11 @@ import {
     Users,
     Mail,
     Smartphone,
-    Package
+    Package,
+    // Iconos Epic 3 - Compliance
+    Shield,
+    Target,
+    Clock
 } from 'lucide-react';
 
 export const Header = ({
@@ -72,6 +76,10 @@ export const Header = ({
         GROQ_CHAT: "groq_chat",
         CONTRIBUTORS: "contributors",
         USER_MANAGEMENT: "user_management",
+        // Epic 3 - Compliance Monitoring Views
+        COMPLIANCE_DASHBOARD: "compliance_dashboard",
+        ALERT_CENTER: "alert_center",
+        RISK_INDICATORS: "risk_indicators",
         // Nuevas vistas de Ingreso de Facturas
         INVOICE_INTAKE: "invoice_intake",
         INVOICE_PROCESSING: "invoice_processing",
@@ -105,13 +113,13 @@ export const Header = ({
             badgeColor: 'bg-red-500',
             section: 'main'
         },
-        {
-            key: navigationViews.TAXPAYER || 'taxpayer',
-            label: 'Contribuyentes',
-            icon: <User className="h-5 w-5" />,
-            description: 'Información de contribuyentes',
-            section: 'main'
-        },
+        // {
+        //     key: navigationViews.TAXPAYER || 'taxpayer',
+        //     label: 'Contribuyentes',
+        //     icon: <User className="h-5 w-5" />,
+        //     description: 'Información de contribuyentes',
+        //     section: 'main'
+        // },
         {
             key: navigationViews.CONTRIBUTORS || 'contributors',
             label: 'Gestión Clientes',
@@ -129,8 +137,22 @@ export const Header = ({
         {
             key: navigationViews.COMPLIANCE || 'compliance',
             label: 'Compliance',
-            icon: <CheckCircle className="h-5 w-5" />,
-            description: 'Estado de cumplimiento',
+            icon: <Shield className="h-5 w-5" />,
+            description: 'Estado de cumplimiento (Epic 3)',
+            section: 'main'
+        },
+        {
+            key: navigationViews.ALERT_CENTER || 'alert_center',
+            label: 'Centro de Alertas',
+            icon: <Target className="h-5 w-5" />,
+            description: 'Gestión centralizada de alertas de compliance',
+            section: 'main'
+        },
+        {
+            key: navigationViews.RISK_INDICATORS || 'risk_indicators',
+            label: 'Indicadores de Riesgo',
+            icon: <AlertCircle className="h-5 w-5" />,
+            description: 'Visualización de niveles de riesgo',
             section: 'main'
         },
         {
@@ -282,20 +304,22 @@ export const Header = ({
 
                     {/* Controles del header */}
                     <div className="flex items-center space-x-4">
-                        {/* Estado de conexión */}
-                        <div className="hidden sm:flex items-center">
+                        {/* Estado de conexión MCP */}
+                        {/* <div className="hidden sm:flex items-center">
                             {isConnected ? (
-                                <div className="flex items-center text-green-600">
+                                <div className="flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-full border border-green-200">
+                                    <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
                                     <Wifi className="h-4 w-4 mr-1" />
-                                    <span className="text-sm">Conectado</span>
+                                    <span className="text-sm font-medium">MCP Conectado</span>
                                 </div>
                             ) : (
-                                <div className="flex items-center text-red-600">
+                                <div className="flex items-center px-3 py-1.5 bg-red-50 text-red-700 rounded-full border border-red-200">
+                                    <div className="w-2 h-2 bg-red-500 rounded-full mr-2" />
                                     <WifiOff className="h-4 w-4 mr-1" />
-                                    <span className="text-sm">Desconectado</span>
+                                    <span className="text-sm font-medium">MCP Desconectado</span>
                                 </div>
                             )}
-                        </div>
+                        </div> */}
 
                         {/* Botón de menú móvil */}
                         <button
@@ -338,6 +362,23 @@ export const Header = ({
                                     <X className="h-6 w-6" />
                                 </button>
                             </div>
+
+                            {/* Estado MCP en móvil */}
+                            {/* <div className="mt-3 sm:hidden">
+                                {isConnected ? (
+                                    <div className="flex items-center px-3 py-2 bg-green-50 text-green-700 rounded-lg border border-green-200">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse" />
+                                        <Wifi className="h-4 w-4 mr-2" />
+                                        <span className="text-sm font-medium">MCP Conectado</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center px-3 py-2 bg-red-50 text-red-700 rounded-lg border border-red-200">
+                                        <div className="w-2 h-2 bg-red-500 rounded-full mr-2" />
+                                        <WifiOff className="h-4 w-4 mr-2" />
+                                        <span className="text-sm font-medium">MCP Desconectado</span>
+                                    </div>
+                                )}
+                            </div> */}
                         </div>
 
                         <div className="p-4 space-y-6 overflow-y-auto max-h-screen">

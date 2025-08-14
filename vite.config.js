@@ -4,11 +4,14 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  
+  // Root directory for the project
+  root: 'src/client',
 
   // Configuración del servidor de desarrollo
   server: {
     host: '0.0.0.0',
-    port: 3001,
+    port: 3030,  // Actualizado al puerto 3030
     strictPort: true,
 
     // Proxy para API calls al servidor backend
@@ -17,7 +20,26 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
         secure: false,
-        ws: true // Habilitar WebSocket proxy
+        ws: true,
+        configure: (proxy, options) => {
+          console.log('[Proxy] Configurando proxy para /api -> http://localhost:8080');
+          
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log(`[Proxy] ${req.method} ${req.url} -> ${options.target}${req.url}`);
+          });
+          
+          proxy.on('proxyRes', (proxyRes, req, res) => {
+            console.log(`[Proxy Response] ${req.method} ${req.url} -> ${proxyRes.statusCode}`);
+          });
+          
+          proxy.on('error', (err, req, res) => {
+            console.error('[Proxy Error]', err);
+            if (res && !res.headersSent) {
+              res.writeHead(500, { 'Content-Type': 'text/plain' });
+              res.end('Proxy error');
+            }
+          });
+        }
       },
       // Proxy para WebSocket connections
       '/ws': {
@@ -29,8 +51,15 @@ export default defineConfig({
 
     // CORS configuration
     cors: {
-      origin: ['http://localhost:3001', 'http://localhost:8080'],
-      credentials: true
+      origin: ['http://localhost:3030', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:3030'],
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
+    },
+    
+    // Configuración adicional
+    hmr: {
+      protocol: 'ws',
+      host: 'localhost'
     }
   },
 
@@ -62,13 +91,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
 
     // Minimización
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: process.env.NODE_ENV === 'production',
-        drop_debugger: true
-      }
-    }
+    minify: false
   },
 
   // Resolución de paths
@@ -120,7 +143,6 @@ export default defineConfig({
 
   // Configuración PWA específica
   esbuild: {
-    jsxInject: `import React from 'react'`,
     target: 'es2020'
   },
 

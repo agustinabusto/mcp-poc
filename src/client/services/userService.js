@@ -1,5 +1,5 @@
 // src/client/services/userService.js
-import { apiClient } from './apiClient';
+import { apiClient } from './apiClient.js';
 
 export class UserService {
     static async getUsers(params = {}) {

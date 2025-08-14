@@ -1,5 +1,6 @@
 // src/client/hooks/useCompliance.js
 import { useState, useEffect, useCallback } from 'react';
+import complianceService from '../services/complianceService.js';
 
 export const useCompliance = () => {
     const [complianceData, setComplianceData] = useState({
@@ -11,6 +12,8 @@ export const useCompliance = () => {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [dashboardData, setDashboardData] = useState(null);
+    const [systemStatus, setSystemStatus] = useState(null);
 
     // Función para verificar cumplimiento
     const checkCompliance = useCallback(async (cuit) => {
@@ -145,15 +148,230 @@ export const useCompliance = () => {
         }
     }, [complianceData.checks, calculateComplianceScore, getComplianceStatus, generateRecommendations]);
 
+    // ============ NUEVAS FUNCIONES PARA EL SISTEMA MEJORADO ============
+
+    // Función para cargar datos del dashboard
+    const loadDashboardData = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const [dashboard, status] = await Promise.all([
+                complianceService.getDashboardData(),
+                complianceService.getSystemStatus()
+            ]);
+
+            setDashboardData(dashboard);
+            setSystemStatus(status);
+            
+            return { dashboard, status };
+        } catch (err) {
+            setError(err.message);
+            console.error('Error loading dashboard data:', err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Función para obtener detalle de compliance para un CUIT
+    const getComplianceDetail = useCallback(async (cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const detail = await complianceService.getComplianceDetail(cuit);
+            return detail;
+        } catch (err) {
+            setError(err.message);
+            console.error(`Error getting compliance detail for ${cuit}:`, err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Función para ejecutar check manual
+    const runManualCheck = useCallback(async (cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const result = await complianceService.runComplianceCheck(cuit);
+            return result;
+        } catch (err) {
+            setError(err.message);
+            console.error(`Error running manual check for ${cuit}:`, err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    // Función para gestionar alertas
+    const alertManager = {
+        getActive: useCallback(async (filters = {}) => {
+            try {
+                return await complianceService.getActiveAlerts(filters);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        acknowledge: useCallback(async (alertId, acknowledgedBy) => {
+            try {
+                return await complianceService.acknowledgeAlert(alertId, acknowledgedBy);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        resolve: useCallback(async (alertId, resolvedBy, resolution = null) => {
+            try {
+                return await complianceService.resolveAlert(alertId, resolvedBy, resolution);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        getStats: useCallback(async (days = 7) => {
+            try {
+                return await complianceService.getAlertStats(days);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, [])
+    };
+
+    // Función para configuración
+    const configManager = {
+        get: useCallback(async (cuit) => {
+            try {
+                return await complianceService.getComplianceConfig(cuit);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        update: useCallback(async (cuit, config) => {
+            try {
+                return await complianceService.updateComplianceConfig(cuit, config);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        enableMonitoring: useCallback(async (cuit, config = {}) => {
+            try {
+                return await complianceService.configureMonitoring(cuit, config);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, []),
+
+        disableMonitoring: useCallback(async (cuit) => {
+            try {
+                return await complianceService.disableMonitoring(cuit);
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            }
+        }, [])
+    };
+
+    // Función para métricas y reportes
+    const getMetrics = useCallback(async (days = 7) => {
+        try {
+            return await complianceService.getSystemMetrics(days);
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        }
+    }, []);
+
+    const getDailyReport = useCallback(async (date = null) => {
+        try {
+            return await complianceService.getDailyReport(date);
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        }
+    }, []);
+
+    // Funciones administrativas
+    const adminActions = {
+        recalculateRiskScores: useCallback(async () => {
+            setLoading(true);
+            try {
+                return await complianceService.recalculateRiskScores();
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            } finally {
+                setLoading(false);
+            }
+        }, []),
+
+        cleanupAlerts: useCallback(async () => {
+            setLoading(true);
+            try {
+                return await complianceService.cleanupOldAlerts();
+            } catch (err) {
+                setError(err.message);
+                throw err;
+            } finally {
+                setLoading(false);
+            }
+        }, [])
+    };
+
+    // Utilidades
+    const utils = {
+        validateCuit: complianceService.validateCuit,
+        formatCuit: complianceService.formatCuit,
+        getRiskLevel: complianceService.getRiskLevel,
+        getComplianceStatusInfo: complianceService.getComplianceStatusInfo,
+        getAlertTypeInfo: complianceService.getAlertTypeInfo
+    };
+
+    // Suscripción a WebSocket para alertas en tiempo real
+    const subscribeToAlerts = useCallback((callback) => {
+        return complianceService.subscribeToAlerts(callback);
+    }, []);
+
     return {
+        // Estado
         complianceData,
+        dashboardData,
+        systemStatus,
         loading,
         error,
+        
+        // Funciones básicas (compatibilidad hacia atrás)
         checkCompliance,
         getPendingObligations,
         getComplianceHistory,
         calculateComplianceScore,
         getComplianceStatus,
-        generateRecommendations
+        generateRecommendations,
+        
+        // Nuevas funciones del sistema mejorado
+        loadDashboardData,
+        getComplianceDetail,
+        runManualCheck,
+        alertManager,
+        configManager,
+        getMetrics,
+        getDailyReport,
+        adminActions,
+        utils,
+        subscribeToAlerts
     };
 };

@@ -6,17 +6,20 @@ export class GroqClient extends EventEmitter {
     constructor(config, logger) {
         super();
         this.config = config;
-        this.logger = logger;
+        this.logger = logger || console;
 
+        // Guardar la API key
+        this.apiKey = config.groqApiKey || config.apiKey || process.env.GROQ_API_KEY;
+        
         // Inicializar cliente Groq
         this.groq = new Groq({
-            apiKey: config.groqApiKey || process.env.GROQ_API_KEY
+            apiKey: this.apiKey
         });
 
-        this.model = config.groqModel || process.env.GROQ_MODEL || 'llama-3.1-70b-versatile';
-        this.maxTokens = config.groqMaxTokens || parseInt(process.env.GROQ_MAX_TOKENS) || 1000;
-        this.temperature = config.groqTemperature || parseFloat(process.env.GROQ_TEMPERATURE) || 0.7;
-        this.timeout = config.groqTimeout || parseInt(process.env.GROQ_TIMEOUT) || 30000;
+        this.model = config.groqModel || config.model || process.env.GROQ_MODEL || 'llama3-70b-8192';
+        this.maxTokens = config.groqMaxTokens || config.maxTokens || parseInt(process.env.GROQ_MAX_TOKENS) || 1000;
+        this.temperature = config.groqTemperature || config.temperature || parseFloat(process.env.GROQ_TEMPERATURE) || 0.7;
+        this.timeout = config.groqTimeout || config.timeout || parseInt(process.env.GROQ_TIMEOUT) || 30000;
 
         this.isInitialized = false;
         this.lastHealthCheck = null;
@@ -31,8 +34,7 @@ export class GroqClient extends EventEmitter {
             lastRequestTime: null
         };
 
-        this.isInitialized = false;
-        this.logger.info('GroqClient inicializado', { model: this.model });
+        this.logger.info('GroqClient inicializado', { model: this.model, hasApiKey: !!this.apiKey });
     }
 
     // Inicializar cliente y verificar conexión
