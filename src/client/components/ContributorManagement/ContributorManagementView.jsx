@@ -6,7 +6,7 @@ import SimpleContributorForm from './SimpleContributorForm.jsx';
 
 const ContributorManagementView = ({ config }) => {
     console.log('🔍 ContributorManagementView renderizando con config:', config);
-    
+
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
 
@@ -47,7 +47,7 @@ const ContributorManagementView = ({ config }) => {
             <div className="mb-6">
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center">
                     <Building className="h-6 w-6 mr-2" />
-                    Gestión de Contribuyentes
+                    Gestión de Clientes
                 </h1>
                 <p className="text-gray-600 mt-1">
                     Administra contribuyentes AFIP con validación en tiempo real y monitoreo de compliance
@@ -56,16 +56,16 @@ const ContributorManagementView = ({ config }) => {
 
             <div className="bg-white rounded-lg shadow p-6 mb-6">
                 <h2 className="text-lg font-semibold mb-4">Acciones Rápidas</h2>
-                
+
                 <div className="flex space-x-3">
-                    <button 
+                    <button
                         onClick={handleCreateContributor}
                         className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center transition-colors"
                     >
                         <Plus className="h-4 w-4 mr-1" />
                         Crear Contribuyente
                     </button>
-                    <button 
+                    <button
                         onClick={handleSettings}
                         className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center transition-colors"
                     >
@@ -80,7 +80,7 @@ const ContributorManagementView = ({ config }) => {
 
             {/* Modal de creación de contribuyente */}
             {showCreateForm && (
-                <SimpleContributorForm 
+                <SimpleContributorForm
                     onSave={handleSaveContributor}
                     onCancel={handleCloseCreateForm}
                     title="Crear Nuevo Contribuyente"

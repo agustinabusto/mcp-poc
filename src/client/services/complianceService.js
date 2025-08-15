@@ -490,7 +490,7 @@ class ComplianceService {
                 severity: 'high' 
             },
             'compliance_degradation': { 
-                label: 'Degradación de Compliance', 
+                label: 'Degradación de Cumplimiento', 
                 category: 'trend',
                 severity: 'medium' 
             },

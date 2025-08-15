@@ -1,7 +1,8 @@
 // src/client/components/ContributorManagement/index.jsx
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Search, Filter, RefreshCw, AlertCircle, CheckCircle, Building } from 'lucide-react';
+import { Users, Plus, Search, Filter, RefreshCw, AlertCircle, CheckCircle, Building, History } from 'lucide-react';
 import SimpleContributorForm from './SimpleContributorForm.jsx';
+import ComplianceHistoryView from '../compliance/ComplianceHistoryView.jsx';
 
 // Mock de datos - reemplazar con API real
 const mockContributors = [
@@ -78,6 +79,7 @@ export const ContributorManagement = () => {
     const [statusFilter, setStatusFilter] = useState('');
     const [showCreateForm, setShowCreateForm] = useState(false);
     const [editingContributor, setEditingContributor] = useState(null);
+    const [showHistoryView, setShowHistoryView] = useState(null);
     const [notification, setNotification] = useState(null);
 
     const categories = ['Responsable Inscripto', 'Monotributista', 'Exento'];
@@ -153,6 +155,16 @@ export const ContributorManagement = () => {
         showNotification('Estado del contribuyente actualizado');
     };
 
+    // Ver historial de compliance
+    const handleViewHistory = (contributor) => {
+        setShowHistoryView(contributor);
+    };
+
+    // Cerrar historial de compliance
+    const handleCloseHistory = () => {
+        setShowHistoryView(null);
+    };
+
     // Obtener color del compliance score
     const getComplianceColor = (score) => {
         if (score >= 90) return 'bg-green-100 text-green-800 border-green-200';
@@ -215,7 +227,7 @@ export const ContributorManagement = () => {
                             <Building className="h-6 w-6 text-blue-600" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900">Gestión de Contribuyentes</h1>
+                            <h1 className="text-2xl font-bold text-gray-900">Gestión de Clientes</h1>
                             <p className="text-gray-600">Administra contribuyentes y su compliance fiscal</p>
                         </div>
                     </div>
@@ -395,6 +407,14 @@ export const ContributorManagement = () => {
                                             <td className="px-6 py-4 text-right text-sm font-medium">
                                                 <div className="flex justify-end space-x-3">
                                                     <button
+                                                        onClick={() => handleViewHistory(contributor)}
+                                                        className="text-purple-600 hover:text-purple-900 transition-colors flex items-center"
+                                                        title="Ver historial de compliance"
+                                                    >
+                                                        <History className="h-4 w-4 mr-1" />
+                                                        Historial
+                                                    </button>
+                                                    <button
                                                         onClick={() => setEditingContributor(contributor)}
                                                         className="text-blue-600 hover:text-blue-900 transition-colors"
                                                     >
@@ -454,6 +474,13 @@ export const ContributorManagement = () => {
                                         </div>
 
                                         <div className="flex flex-col space-y-1">
+                                            <button
+                                                onClick={() => handleViewHistory(contributor)}
+                                                className="text-purple-600 hover:text-purple-900 text-sm transition-colors flex items-center"
+                                            >
+                                                <History className="h-3 w-3 mr-1" />
+                                                Historial
+                                            </button>
                                             <button
                                                 onClick={() => setEditingContributor(contributor)}
                                                 className="text-blue-600 hover:text-blue-900 text-sm transition-colors"
@@ -542,6 +569,15 @@ export const ContributorManagement = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Modal de historial de compliance */}
+            {showHistoryView && (
+                <ComplianceHistoryView
+                    cuit={showHistoryView.cuit}
+                    businessName={showHistoryView.razonSocial}
+                    onClose={handleCloseHistory}
+                />
+            )}
 
             {/* Notificación */}
             {notification && (

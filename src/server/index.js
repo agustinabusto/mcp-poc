@@ -53,6 +53,7 @@ import contributorsRoutes from './routes/contributors.js';
 
 // Importar rutas de compliance y notificaciones
 import { setupComplianceRoutes } from './routes/compliance.js';
+import { setupComplianceHistoryRoutes } from './routes/compliance-history.js';
 import { setupNotificationRoutes } from './routes/notifications.js';
 
 // Función para asegurar que existe el directorio de uploads
@@ -1079,6 +1080,9 @@ async function startServer() {
         console.log('🔧 Configurando rutas de compliance y notificaciones...');
         const complianceRoutes = setupComplianceRoutes(complianceMonitor, riskScoringEngine, alertManager, DatabaseService.db);
         app.use('/api/compliance', complianceRoutes);
+        
+        const complianceHistoryRoutes = setupComplianceHistoryRoutes(DatabaseService.db);
+        app.use('/api/compliance', complianceHistoryRoutes);
         
         const notificationRoutes = setupNotificationRoutes(notificationService, DatabaseService.db);
         app.use('/api/notifications', notificationRoutes);

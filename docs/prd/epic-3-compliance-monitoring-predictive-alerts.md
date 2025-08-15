@@ -121,6 +121,29 @@ Implementar un sistema integral de monitoreo de compliance y alertas predictivas
 - `src/client/components/notifications/NotificationSettings.jsx` (crear)
 - `src/server/routes/notifications.js` (crear)
 
+### Story 4: Visualización de Historial de Compliance por Contribuyente
+**Archivo de referencia:** `docs/prd/story-4-compliance-history-visualization.md`
+**Estado:** 🔧 Ready for Development
+**Prioridad:** ⚡ Alta
+**Estimación:** M (1-3 días)
+
+**Descripción Técnica Detallada:**
+- Vista completa del historial de compliance accesible desde detalles del contribuyente
+- Timeline interactivo con eventos cronológicos: alertas, vencimientos, cambios de estado
+- Análisis de tendencias históricas con evolución del risk score y patrones estacionales
+- Identificación de patrones de cumplimiento y análisis predictivo basado en historial
+- Integración seamless con sistema de gestión de contribuyentes existente
+- Performance optimizada con lazy loading, paginación y caching para grandes datasets
+
+**Archivos a Crear/Modificar:**
+- `src/client/components/compliance/ComplianceHistoryView.jsx` (crear)
+- `src/client/components/compliance/ComplianceTimeline.jsx` (crear)
+- `src/client/components/compliance/ComplianceTrends.jsx` (crear)
+- `src/client/components/compliance/CompliancePatterns.jsx` (crear)
+- `src/client/services/complianceHistoryService.js` (crear)
+- `src/server/routes/compliance-history.js` (crear)
+- `src/client/components/ContributorManagement/ContributorManagementView.jsx` (modificar)
+
 ## Especificaciones Técnicas Detalladas
 
 ### Arquitectura de Integración
@@ -245,6 +268,14 @@ riskScore = (
 - [ ] Sistema de acknowledgment tracking implementado
 - [ ] Configuración por usuario/rol funcionando
 
+### Story 4: Visualización de Historial de Compliance
+- [ ] Vista de historial accesible desde detalles del contribuyente
+- [ ] Timeline interactivo con todos los eventos de compliance funcionando
+- [ ] Análisis de tendencias históricas con gráficos de evolución de risk score
+- [ ] Identificación de patrones de cumplimiento operativa
+- [ ] Performance optimizada con lazy loading y paginación (< 2s load time)
+- [ ] Integración seamless sin afectar funcionalidad existente de contribuyentes
+
 ## Requisitos de Compatibilidad
 
 ### Sistemas Existentes
@@ -280,10 +311,11 @@ riskScore = (
 ## Definition of Done
 
 ### Funcionalidad Completada
-- [ ] Todas las 3 stories completadas con criterios de aceptación cumplidos
+- [ ] Todas las 4 stories completadas con criterios de aceptación cumplidos
 - [ ] Sistema de monitoreo en tiempo real operativo con < 500ms response time
 - [ ] Dashboard de compliance integrado y funcionando
 - [ ] Sistema de alertas multi-canal operativo
+- [ ] Visualización de historial de compliance por contribuyente operativa
 
 ### Calidad y Testing
 - [ ] Funcionalidad AFIP existente verificada mediante testing de regresión
@@ -315,20 +347,26 @@ src/server/services/
 
 src/server/routes/
 ├── compliance.js
-└── notifications.js
+├── notifications.js
+└── compliance-history.js
 
 src/client/components/compliance/
 ├── ComplianceDashboard.jsx
 ├── ComplianceScore.jsx
 ├── RiskIndicators.jsx
-└── AlertsTimeline.jsx
+├── AlertsTimeline.jsx
+├── ComplianceHistoryView.jsx
+├── ComplianceTimeline.jsx
+├── ComplianceTrends.jsx
+└── CompliancePatterns.jsx
 
 src/client/components/notifications/
 ├── AlertCenter.jsx
 └── NotificationSettings.jsx
 
 src/client/services/
-└── complianceService.js
+├── complianceService.js
+└── complianceHistoryService.js
 ```
 
 ### Archivos a Modificar
@@ -339,7 +377,8 @@ src/server/services/
 
 src/client/components/
 ├── Dashboard.jsx (integrar widgets)
-└── SystemMetrics.jsx (añadir métricas compliance)
+├── SystemMetrics.jsx (añadir métricas compliance)
+└── ContributorManagement/ContributorManagementView.jsx (agregar acceso a historial)
 
 docs/
 ├── API.md (documentar nuevos endpoints)
@@ -353,7 +392,8 @@ docs/
 1. **Orden de Implementación:**
    - Comenzar con Story 1 (backend compliance monitoring)
    - Continuar con Story 2 (dashboard UI)
-   - Finalizar con Story 3 (notification system)
+   - Continuar con Story 3 (notification system)
+   - Finalizar con Story 4 (compliance history visualization)
 
 2. **Patrones de Código a Seguir:**
    - Componentes React: PascalCase, hooks pattern existente
