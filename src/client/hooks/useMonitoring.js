@@ -1,21 +1,27 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useSmartCache } from './useSmartCache.js';
 
 export const useMonitoring = () => {
-    // Detectar el puerto correcto basado en el entorno
-    const getServerUrl = useCallback(() => {
-        // En desarrollo, el servidor está en 8080
-        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    // Memoizar la configuración del servidor para evitar recálculos innecesarios
+    const serverConfig = useMemo(() => {
+        const isLocalhost = window.location.hostname === 'localhost' || 
+                           window.location.hostname === '127.0.0.1';
+        
+        if (isLocalhost) {
             return {
                 http: 'http://localhost:8080',
                 ws: 'ws://localhost:8080'
             };
         }
-        // En producción, usar el mismo host
+        
         return {
             http: `${window.location.protocol}//${window.location.host}`,
             ws: `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
         };
     }, []);
+
+    // Función memoizada para obtener URLs del servidor
+    const getServerUrl = useCallback(() => serverConfig, [serverConfig]);
     const [isConnected, setIsConnected] = useState(false);
     const [loading, setLoading] = useState(false);
     const [monitoringData, setMonitoringData] = useState({
@@ -371,12 +377,15 @@ export const useMonitoring = () => {
         }));
     }, [clearAllTimeouts]);
 
-    // ✅ Función mejorada para obtener métricas
-    const getMetrics = useCallback(async () => {
-        if (loading) return {};
-
-        setLoading(true);
-        try {
+    // Cache inteligente para métricas del servidor
+    const {
+        data: cachedMetrics,
+        loading: metricsLoading,
+        error: metricsError,
+        refetch: fetchMetricsFromCache
+    } = useSmartCache(
+        'monitoring_metrics',
+        async () => {
             const serverUrls = getServerUrl();
             if (!serverUrls || !serverUrls.http) {
                 throw new Error('URL del servidor HTTP no disponible');
@@ -397,7 +406,7 @@ export const useMonitoring = () => {
             const data = await response.json();
 
             // Transformar datos del servidor al formato esperado
-            const metrics = {
+            return {
                 server_status: data.status || 'unknown',
                 afip_mode: data.afipMode || 'unknown',
                 groq_enabled: data.groqEnabled || false,
@@ -410,23 +419,35 @@ export const useMonitoring = () => {
                 requests_per_minute: data.requestsPerMinute || 0,
                 timestamp: new Date().toISOString()
             };
+        },
+        {
+            ttl: 30000, // 30 segundos - métricas de sistema necesitan actualizarse frecuentemente
+            staleWhileRevalidate: true,
+            cacheLevel: 'memory'
+        }
+    );
 
+    // Función optimizada para obtener métricas
+    const getMetrics = useCallback(async () => {
+        if (loading || metricsLoading) return cachedMetrics || {};
+
+        try {
+            const metrics = await fetchMetricsFromCache();
+            
             setMonitoringData(prev => ({
                 ...prev,
-                metrics,
+                metrics: metrics || {},
                 lastUpdate: new Date().toISOString()
             }));
 
-            return metrics;
+            return metrics || {};
         } catch (error) {
             logError(`Error fetching metrics: ${error.message}`, 'metrics_fetch', {
                 error: error.message
             });
             return {};
-        } finally {
-            setLoading(false);
         }
-    }, [getServerUrl, loading, logError]);
+    }, [loading, metricsLoading, cachedMetrics, fetchMetricsFromCache, logError]);
 
     // ✅ Función para enviar ping
     const sendPing = useCallback(() => {
@@ -450,18 +471,59 @@ export const useMonitoring = () => {
         };
     }, [disconnect]);
 
+    // Memoizar funciones de utilidad para evitar re-creaciones innecesarias
+    const utilityFunctions = useMemo(() => ({
+        getConnectionState: () => wsRef.current?.readyState,
+        getReconnectAttempts: () => reconnectAttempts.current,
+        clearErrors: () => setMonitoringData(prev => ({ ...prev, errors: [] })),
+        
+        // Funciones adicionales de utilidad
+        getConnectionStateString: () => {
+            const state = wsRef.current?.readyState;
+            const stateMap = {
+                [WebSocket.CONNECTING]: 'CONNECTING',
+                [WebSocket.OPEN]: 'OPEN', 
+                [WebSocket.CLOSING]: 'CLOSING',
+                [WebSocket.CLOSED]: 'CLOSED'
+            };
+            return stateMap[state] || 'UNKNOWN';
+        },
+        
+        isHealthy: () => {
+            return isConnected && 
+                   cachedMetrics &&
+                   cachedMetrics.server_status === 'running' &&
+                   !metricsError;
+        },
+        
+        getLatestMetrics: () => cachedMetrics,
+        refreshMetrics: fetchMetricsFromCache
+    }), [isConnected, cachedMetrics, metricsError, fetchMetricsFromCache]);
+
+    // Estado combinado para loading
+    const combinedLoading = loading || metricsLoading;
+
     return {
         isConnected,
-        loading,
-        monitoringData,
+        loading: combinedLoading,
+        monitoringData: {
+            ...monitoringData,
+            metrics: cachedMetrics || monitoringData.metrics
+        },
         connect,
         disconnect,
         getMetrics,
         sendPing,
-        // Funciones adicionales para debugging
-        getConnectionState: () => wsRef.current?.readyState,
-        getReconnectAttempts: () => reconnectAttempts.current,
-        clearErrors: () => setMonitoringData(prev => ({ ...prev, errors: [] }))
+        
+        // Funciones de utilidad memoizadas
+        ...utilityFunctions,
+        
+        // Estado de cache para debugging
+        cacheStats: {
+            metricsLoading,
+            metricsError,
+            hasMetricsCache: !!cachedMetrics
+        }
     };
 };
 

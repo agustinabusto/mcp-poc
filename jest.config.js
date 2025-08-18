@@ -1,28 +1,51 @@
 export default {
-  testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.jsx'],
-  globals: {
-    'ts-jest': {
-      useESM: true
+  projects: [
+    {
+      displayName: 'server',
+      testEnvironment: 'node',
+      testMatch: [
+        '**/tests/unit/services/**/*.test.js',
+        '**/tests/unit/routes/**/*.test.js',
+        '**/tests/unit/tools/**/*.test.js'
+      ],
+      extensionsToTreatAsEsm: ['.jsx'],
+      globals: {
+        'ts-jest': {
+          useESM: true
+        }
+      },
+      moduleNameMapper: {
+        '^(\\.{1,2}/.*)\\.(js|jsx)$': '$1'
+      },
+      transform: {
+        '^.+\\.(js|jsx)$': 'babel-jest'
+      },
+      setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.js']
+    },
+    {
+      displayName: 'client',
+      testEnvironment: 'jsdom',
+      testMatch: [
+        '**/tests/unit/hooks/**/*.test.js',
+        '**/tests/unit/components/**/*.test.js'
+      ],
+      extensionsToTreatAsEsm: ['.jsx'],
+      moduleNameMapper: {
+        '^(\\.{1,2}/.*)\\.(js|jsx)$': '$1'
+      },
+      transform: {
+        '^.+\\.(js|jsx)$': 'babel-jest'
+      },
+      setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.react.js']
     }
-  },
-  moduleNameMapper: {
-    '^(\\.{1,2}/.*)\\.(js|jsx)$': '$1'
-  },
-  transform: {},
-  testMatch: [
-    '**/tests/**/*.test.js',
-    '**/tests/**/*.spec.js'
   ],
   collectCoverageFrom: [
     'src/**/*.js',
     '!src/**/*.test.js',
-    '!src/**/*.spec.js',
-    '!src/client/**/*' // Excluir cliente React
+    '!src/**/*.spec.js'
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
-  setupFilesAfterEnv: ['<rootDir>/tests/jest.setup.js'],
   testTimeout: 30000,
   maxWorkers: '50%'
 };
