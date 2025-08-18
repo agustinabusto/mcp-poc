@@ -3,7 +3,20 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'inject-version',
+      generateBundle() {
+        // Inyectar versión en service worker
+        this.emitFile({
+          type: 'asset',
+          fileName: 'sw-version.js',
+          source: `self.__APP_VERSION__ = "${process.env.npm_package_version || '1.0.0'}";`
+        });
+      }
+    }
+  ],
   
   // Root directory for the project
   root: 'src/client',
