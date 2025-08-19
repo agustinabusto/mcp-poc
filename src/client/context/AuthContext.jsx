@@ -2,6 +2,7 @@
 // src/client/context/AuthContext.jsx
 import React, { createContext, useContext, useReducer, useEffect } from 'react';
 import { authService } from '../services/auth-service.js';
+import { cacheManager } from '../services/cache-manager.js';
 
 const AuthContext = createContext();
 
@@ -152,6 +153,16 @@ export const AuthProvider = ({ children }) => {
                 payload: result
             });
 
+            // Invalidar cachés después de login exitoso desde AuthContext
+            try {
+                await cacheManager.invalidateByBusinessEvent('user_login', { 
+                    userId: result.user?.id,
+                    email: result.user?.email 
+                });
+            } catch (cacheError) {
+                console.warn('Error clearing cache after login in AuthContext:', cacheError);
+            }
+
             return result;
         } catch (error) {
             dispatch({
@@ -170,6 +181,16 @@ export const AuthProvider = ({ children }) => {
         } catch (error) {
             console.error('Error durante logout:', error);
         } finally {
+            // Usar el sistema centralizado de invalidación de caché
+            try {
+                await cacheManager.invalidateByBusinessEvent('user_logout', { 
+                    userId: state.user?.id 
+                });
+                await cacheManager.clearAll();
+            } catch (cacheError) {
+                console.error('Error clearing cache during logout:', cacheError);
+            }
+            
             localStorage.removeItem('@bookkeeper/auth_tokens');
             localStorage.removeItem('@bookkeeper/user_data');
             dispatch({ type: 'LOGOUT' });

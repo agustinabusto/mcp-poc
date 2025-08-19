@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Hooks - AFIP Monitor MCP</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 1000px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }
+        .error { color: red; background: #fee; padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .success { color: green; background: #efe; padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .warning { color: orange; background: #ffe; padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 4px; }
+        button { padding: 8px 16px; margin: 5px; border: none; border-radius: 4px; cursor: pointer; background: #007bff; color: white; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐛 Debug Hooks - Phase 3</h1>
+        
+        <div class="test-section">
+            <h2>🔍 Import Tests</h2>
+            <button onclick="testImports()">Test All Imports</button>
+            <div id="import-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🧪 Hook Execution Tests</h2>
+            <button onclick="testBasicHooks()">Test Basic Hooks</button>
+            <button onclick="testCacheInvalidation()">Test Cache Invalidation</button>
+            <div id="hook-results"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📝 Debug Log</h2>
+            <button onclick="clearDebugLog()">Clear</button>
+            <div id="debug-log" style="height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #f8f9fa;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Global debug function
+        window.debug = function(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('debug-log');
+            const logEntry = document.createElement('div');
+            logEntry.className = type;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        };
+
+        window.clearDebugLog = function() {
+            document.getElementById('debug-log').innerHTML = '';
+        };
+
+        // Test individual imports
+        window.testImports = async function() {
+            const results = document.getElementById('import-results');
+            results.innerHTML = '<h3>Testing imports...</h3>';
+            
+            const imports = [
+                { name: 'cache-manager', path: './services/cache-manager.js' },
+                { name: 'useCacheInvalidation', path: './hooks/useCacheInvalidation.js' },
+                { name: 'useCompliance', path: './hooks/useCompliance.js' },
+                { name: 'useSmartCache', path: './hooks/useSmartCache.js' }
+            ];
+
+            for (const imp of imports) {
+                try {
+                    window.debug(`Testing import: ${imp.name}`, 'info');
+                    const module = await import(imp.path);
+                    
+                    if (module && Object.keys(module).length > 0) {
+                        results.innerHTML += `<div class="success">✅ ${imp.name}: OK (exports: ${Object.keys(module).join(', ')})</div>`;
+                        window.debug(`✅ ${imp.name} imported successfully`, 'success');
+                    } else {
+                        results.innerHTML += `<div class="warning">⚠️ ${imp.name}: Loaded but no exports</div>`;
+                        window.debug(`⚠️ ${imp.name} loaded but no exports`, 'warning');
+                    }
+                } catch (error) {
+                    results.innerHTML += `<div class="error">❌ ${imp.name}: ${error.message}</div>`;
+                    window.debug(`❌ ${imp.name} failed: ${error.message}`, 'error');
+                    console.error(`Import error for ${imp.name}:`, error);
+                }
+            }
+        };
+
+        // Test basic React hooks functionality
+        window.testBasicHooks = async function() {
+            const results = document.getElementById('hook-results');
+            results.innerHTML = '<h3>Testing React hooks...</h3>';
+            
+            try {
+                // Test React import
+                window.debug('Testing React import...', 'info');
+                const React = await import('react');
+                if (React.useState && React.useEffect && React.useCallback) {
+                    results.innerHTML += '<div class="success">✅ React hooks available</div>';
+                    window.debug('✅ React hooks available', 'success');
+                } else {
+                    throw new Error('React hooks not available');
+                }
+
+                // Test react-router-dom
+                window.debug('Testing react-router-dom import...', 'info');
+                const router = await import('react-router-dom');
+                if (router.useNavigate) {
+                    results.innerHTML += '<div class="success">✅ react-router-dom available</div>';
+                    window.debug('✅ react-router-dom available', 'success');
+                } else {
+                    results.innerHTML += '<div class="warning">⚠️ react-router-dom loaded but useNavigate not found</div>';
+                    window.debug('⚠️ react-router-dom missing useNavigate', 'warning');
+                }
+
+            } catch (error) {
+                results.innerHTML += `<div class="error">❌ React hooks test failed: ${error.message}</div>`;
+                window.debug(`❌ React hooks test failed: ${error.message}`, 'error');
+                console.error('React hooks test error:', error);
+            }
+        };
+
+        // Test cache invalidation specifically
+        window.testCacheInvalidation = async function() {
+            const results = document.getElementById('hook-results');
+            results.innerHTML += '<h3>Testing cache invalidation...</h3>';
+            
+            try {
+                // Import cache manager
+                window.debug('Importing cache manager...', 'info');
+                const cacheModule = await import('./services/cache-manager.js');
+                
+                if (cacheModule.cacheManager) {
+                    results.innerHTML += '<div class="success">✅ CacheManager imported</div>';
+                    window.debug('✅ CacheManager imported', 'success');
+                    
+                    // Test basic operations
+                    window.debug('Testing basic cache operations...', 'info');
+                    cacheModule.cacheManager.setMemoryCache('test_key', { test: 'value' }, 5000);
+                    const retrieved = cacheModule.cacheManager.getMemoryCache('test_key');
+                    
+                    if (retrieved && retrieved.test === 'value') {
+                        results.innerHTML += '<div class="success">✅ Basic cache operations work</div>';
+                        window.debug('✅ Basic cache operations work', 'success');
+                    } else {
+                        throw new Error('Basic cache operations failed');
+                    }
+                    
+                    // Test business events
+                    window.debug('Testing business events...', 'info');
+                    const patterns = cacheModule.cacheManager.getInvalidationPatternsForEvent('compliance_check_completed', { cuit: '20123456789' });
+                    
+                    if (patterns && patterns.length > 0) {
+                        results.innerHTML += `<div class="success">✅ Business events work (${patterns.length} patterns)</div>`;
+                        window.debug(`✅ Business events work: ${patterns.join(', ')}`, 'success');
+                    } else {
+                        throw new Error('Business events failed');
+                    }
+                    
+                } else {
+                    throw new Error('cacheManager not exported');
+                }
+
+            } catch (error) {
+                results.innerHTML += `<div class="error">❌ Cache invalidation test failed: ${error.message}</div>`;
+                window.debug(`❌ Cache invalidation test failed: ${error.message}`, 'error');
+                console.error('Cache invalidation test error:', error);
+            }
+        };
+
+        // Test Service Worker
+        window.testServiceWorker = async function() {
+            try {
+                window.debug('Testing Service Worker...', 'info');
+                
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.ready;
+                    window.debug('✅ Service Worker registered', 'success');
+                    
+                    if (navigator.serviceWorker.controller) {
+                        window.debug('✅ Service Worker controlling', 'success');
+                        
+                        // Test message
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'GET_CACHE_STATS'
+                        });
+                        window.debug('📤 Test message sent to SW', 'info');
+                        
+                    } else {
+                        window.debug('⚠️ Service Worker not controlling', 'warning');
+                    }
+                } else {
+                    window.debug('❌ Service Worker not supported', 'error');
+                }
+            } catch (error) {
+                window.debug(`❌ Service Worker test failed: ${error.message}`, 'error');
+            }
+        };
+
+        // Listen for SW messages
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                window.debug(`📨 SW Message: ${JSON.stringify(event.data)}`, 'info');
+            });
+        }
+
+        // Auto-run basic tests on load
+        window.addEventListener('load', async function() {
+            window.debug('🚀 Starting debug session...', 'info');
+            await testServiceWorker();
+            window.debug('📋 Debug session ready. Use buttons to run specific tests.', 'info');
+        });
+    </script>
+</body>
+</html>

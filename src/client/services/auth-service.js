@@ -3,6 +3,8 @@
 // src/client/services/auth-service.js
 // ===================================================
 
+import { cacheManager } from './cache-manager.js';
+
 class AuthService {
     constructor() {
         this.baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -30,6 +32,16 @@ class AuthService {
 
         if (!data.success) {
             throw new Error(data.error || 'Error en login');
+        }
+
+        // Invalidar cachés previos del usuario al hacer login exitoso
+        try {
+            await cacheManager.invalidateByBusinessEvent('user_login', { 
+                userId: data.data.user?.id,
+                email: data.data.user?.email 
+            });
+        } catch (cacheError) {
+            console.warn('Error clearing cache after login:', cacheError);
         }
 
         return data.data;
@@ -115,6 +127,16 @@ class AuthService {
 
         if (!data.success) {
             throw new Error(data.error || 'Error en registro');
+        }
+
+        // Invalidar cachés después de registro exitoso
+        try {
+            await cacheManager.invalidateByBusinessEvent('user_registered', { 
+                userId: data.data.user?.id,
+                email: data.data.user?.email 
+            });
+        } catch (cacheError) {
+            console.warn('Error clearing cache after registration:', cacheError);
         }
 
         return data.data;

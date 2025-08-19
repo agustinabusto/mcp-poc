@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Test - Cache Phase 3</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .status { padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Simple Cache Test</h1>
+    
+    <div id="status"></div>
+    
+    <button onclick="testAPI()">Test API</button>
+    <button onclick="testCacheManager()">Test Cache Manager</button>
+    <button onclick="testServiceWorker()">Test Service Worker</button>
+    
+    <div id="results"></div>
+
+    <script>
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.textContent = `${new Date().toLocaleTimeString()} - ${message}`;
+            document.getElementById('results').appendChild(div);
+            console.log(message);
+        }
+
+        async function testAPI() {
+            try {
+                log('Testing API connection...', 'info');
+                
+                // Test backend directly through proxy
+                const response = await fetch('/api/contributors?limit=1');
+                
+                if (response.ok) {
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        const data = await response.json();
+                        log(`✅ API working: ${data.data?.length || 0} contributors`, 'success');
+                    } else {
+                        const text = await response.text();
+                        log(`⚠️ API returned non-JSON: ${text.substring(0, 100)}...`, 'warning');
+                    }
+                } else {
+                    const text = await response.text();
+                    log(`❌ API error ${response.status}: ${text.substring(0, 100)}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ API test failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testCacheManager() {
+            try {
+                log('Testing Cache Manager import...', 'info');
+                
+                const module = await import('./services/cache-manager.js');
+                if (module.cacheManager) {
+                    log('✅ Cache Manager loaded', 'success');
+                    
+                    // Test basic operations
+                    module.cacheManager.setMemoryCache('test', {value: 'test'}, 5000);
+                    const retrieved = module.cacheManager.getMemoryCache('test');
+                    
+                    if (retrieved && retrieved.value === 'test') {
+                        log('✅ Cache operations working', 'success');
+                    } else {
+                        throw new Error('Cache operations failed');
+                    }
+                    
+                    // Test business events
+                    const patterns = module.cacheManager.getInvalidationPatternsForEvent(
+                        'compliance_check_completed', 
+                        { cuit: '20123456789' }
+                    );
+                    
+                    log(`✅ Business events: ${patterns.length} patterns found`, 'success');
+                    
+                } else {
+                    throw new Error('cacheManager not found in module');
+                }
+            } catch (error) {
+                log(`❌ Cache Manager test failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testServiceWorker() {
+            try {
+                log('Testing Service Worker...', 'info');
+                
+                if ('serviceWorker' in navigator) {
+                    if (navigator.serviceWorker.controller) {
+                        log('✅ Service Worker active', 'success');
+                        
+                        // Test communication
+                        navigator.serviceWorker.controller.postMessage({
+                            type: 'GET_CACHE_STATS'
+                        });
+                        log('📤 Message sent to SW', 'info');
+                        
+                    } else {
+                        log('⚠️ Service Worker not controlling', 'warning');
+                        
+                        // Try to register
+                        const registration = await navigator.serviceWorker.register('/sw.js');
+                        log('🔄 Service Worker registration attempted', 'info');
+                    }
+                } else {
+                    log('❌ Service Worker not supported', 'error');
+                }
+            } catch (error) {
+                log(`❌ Service Worker test failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Listen for SW messages
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                log(`📨 SW Response: ${JSON.stringify(event.data)}`, 'info');
+            });
+        }
+
+        // Auto-run API test
+        window.addEventListener('load', () => {
+            log('🚀 Simple test loaded', 'info');
+            setTimeout(testAPI, 1000);
+        });
+    </script>
+</body>
+</html>

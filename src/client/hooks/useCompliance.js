@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import complianceService from '../services/complianceService.js';
 import { useSmartCache } from './useSmartCache.js';
+import { useCacheInvalidation } from './useCacheInvalidation.js';
 
 export const useCompliance = () => {
     const [complianceData, setComplianceData] = useState({
@@ -13,6 +14,13 @@ export const useCompliance = () => {
     });
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+
+    // Integrar sistema de invalidación de caché
+    const { 
+        invalidateCompliance, 
+        onCacheInvalidated,
+        refreshAfterInvalidation 
+    } = useCacheInvalidation();
 
     // Usar useSmartCache para datos del dashboard
     const {
@@ -229,6 +237,25 @@ export const useCompliance = () => {
         }
     }, [complianceData.checks, calculateComplianceScore, getComplianceStatus, generateRecommendations]);
 
+    // Suscribirse a eventos de invalidación de caché
+    useEffect(() => {
+        const unsubscribe = onCacheInvalidated('compliance_', (message) => {
+            console.log('useCompliance: Cache invalidation detected', message);
+            
+            // Refrescar dashboard si se invalida cualquier dato de compliance
+            if (message.pattern.includes('compliance_dashboard')) {
+                refreshDashboard().catch(console.error);
+            }
+            
+            // Refrescar estado del sistema
+            if (message.pattern.includes('compliance_system') || message.type === 'daily_sync') {
+                refreshSystemStatus().catch(console.error);
+            }
+        });
+
+        return unsubscribe;
+    }, [onCacheInvalidated, refreshDashboard, refreshSystemStatus]);
+
     // ============ NUEVAS FUNCIONES PARA EL SISTEMA MEJORADO ============
 
     // Función para cargar datos del dashboard (optimizada con cache)
@@ -300,10 +327,15 @@ export const useCompliance = () => {
         setError(null);
 
         try {
-            // Invalidar todos los caches relacionados con este CUIT
+            // Usar sistema centralizado de invalidación
+            await invalidateCompliance(cuit);
+            
+            // Invalidar caches locales específicos
             clearComplianceCache(`_${cuit}`);
             
+            // Ejecutar el check manual
             const result = await invalidateComplianceCache(cuit);
+            
             return result;
         } catch (err) {
             setError(err.message);
@@ -312,7 +344,7 @@ export const useCompliance = () => {
         } finally {
             setLoading(false);
         }
-    }, [invalidateComplianceCache, clearComplianceCache]);
+    }, [invalidateComplianceCache, clearComplianceCache, invalidateCompliance]);
 
     // Caché para alertas activas
     const { 
@@ -354,8 +386,12 @@ export const useCompliance = () => {
         acknowledge: async (alertId, acknowledgedBy) => {
             try {
                 const result = await complianceService.acknowledgeAlert(alertId, acknowledgedBy);
-                // Invalidar cache de alertas activas
-                getActiveAlertsCache.clearCache && getActiveAlertsCache.clearCache();
+                
+                // Usar sistema centralizado de invalidación
+                await refreshAfterInvalidation('active_alerts', async () => {
+                    getActiveAlertsCache.clearCache && getActiveAlertsCache.clearCache();
+                });
+                
                 return result;
             } catch (err) {
                 setError(err.message);
@@ -366,8 +402,12 @@ export const useCompliance = () => {
         resolve: async (alertId, resolvedBy, resolution = null) => {
             try {
                 const result = await complianceService.resolveAlert(alertId, resolvedBy, resolution);
-                // Invalidar cache de alertas activas
-                getActiveAlertsCache.clearCache && getActiveAlertsCache.clearCache();
+                
+                // Usar sistema centralizado de invalidación
+                await refreshAfterInvalidation('active_alerts', async () => {
+                    getActiveAlertsCache.clearCache && getActiveAlertsCache.clearCache();
+                });
+                
                 return result;
             } catch (err) {
                 setError(err.message);

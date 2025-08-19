@@ -34,9 +34,8 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
         ws: true,
+        rewrite: (path) => path,
         configure: (proxy, options) => {
-          console.log('[Proxy] Configurando proxy para /api -> http://localhost:8080');
-          
           proxy.on('proxyReq', (proxyReq, req, res) => {
             console.log(`[Proxy] ${req.method} ${req.url} -> ${options.target}${req.url}`);
           });
@@ -47,18 +46,8 @@ export default defineConfig({
           
           proxy.on('error', (err, req, res) => {
             console.error('[Proxy Error]', err);
-            if (res && !res.headersSent) {
-              res.writeHead(500, { 'Content-Type': 'text/plain' });
-              res.end('Proxy error');
-            }
           });
         }
-      },
-      // Proxy para WebSocket connections
-      '/ws': {
-        target: 'ws://localhost:8080',
-        ws: true,
-        changeOrigin: true
       }
     },
 

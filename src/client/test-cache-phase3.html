@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Cache Phase 3 - AFIP Monitor MCP</title>
+    <style>
+        body { 
+            font-family: monospace; 
+            padding: 20px; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white; 
+            padding: 20px; 
+            border-radius: 8px; 
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+        }
+        .test-section { 
+            margin: 20px 0; 
+            padding: 15px; 
+            border: 1px solid #ddd; 
+            border-radius: 4px; 
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        button { 
+            padding: 8px 16px; 
+            margin: 5px; 
+            border: none; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            background: #007bff; 
+            color: white; 
+        }
+        button:hover { background: #0056b3; }
+        pre { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            border-radius: 4px; 
+            overflow-x: auto; 
+            font-size: 12px; 
+        }
+        .log-entry { 
+            margin: 2px 0; 
+            padding: 2px 5px; 
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-ok { background-color: #28a745; }
+        .status-warning { background-color: #ffc107; }
+        .status-error { background-color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test Suite - Cache Phase 3 Implementation</h1>
+        
+        <div class="test-section">
+            <h2>📊 System Status</h2>
+            <div id="system-status">
+                <div id="backend-status">🔄 Checking backend...</div>
+                <div id="sw-status">🔄 Checking Service Worker...</div>
+                <div id="cache-manager-status">🔄 Checking Cache Manager...</div>
+                <div id="storage-status">🔄 Checking Storage...</div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <h2>🎯 Cache Manager Tests</h2>
+            <button onclick="testCacheManager()">Test Cache Manager</button>
+            <button onclick="testBusinessEvents()">Test Business Events</button>
+            <button onclick="testServiceWorkerComm()">Test SW Communication</button>
+            <button onclick="clearAllCaches()">Clear All Caches</button>
+            <div id="cache-tests-log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📈 Cache Statistics</h2>
+            <button onclick="getCacheStats()">Get Cache Stats</button>
+            <button onclick="getServiceWorkerStats()">Get SW Stats</button>
+            <div id="stats-display"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>🔄 Invalidation Tests</h2>
+            <button onclick="testComplianceInvalidation()">Test Compliance Invalidation</button>
+            <button onclick="testContributorInvalidation()">Test Contributor Invalidation</button>
+            <button onclick="testDailySync()">Test Daily Sync</button>
+            <div id="invalidation-log"></div>
+        </div>
+
+        <div class="test-section">
+            <h2>📝 Live Log</h2>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="live-log" style="height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: #f8f9fa;"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Global log function
+        window.log = function(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('live-log');
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        };
+
+        // Test backend connectivity
+        async function checkBackend() {
+            try {
+                const response = await fetch('/api/contributors?limit=1');
+                if (response.ok) {
+                    document.getElementById('backend-status').innerHTML = 
+                        '<span class="status-indicator status-ok"></span>✅ Backend API: Connected';
+                    window.log('✅ Backend API test passed', 'success');
+                    return true;
+                } else {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+            } catch (error) {
+                document.getElementById('backend-status').innerHTML = 
+                    '<span class="status-indicator status-error"></span>❌ Backend API: Failed - ' + error.message;
+                window.log('❌ Backend API test failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Test Service Worker
+        async function checkServiceWorker() {
+            try {
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.ready;
+                    if (navigator.serviceWorker.controller) {
+                        document.getElementById('sw-status').innerHTML = 
+                            '<span class="status-indicator status-ok"></span>✅ Service Worker: Active';
+                        window.log('✅ Service Worker is active', 'success');
+                        return true;
+                    } else {
+                        document.getElementById('sw-status').innerHTML = 
+                            '<span class="status-indicator status-warning"></span>⚠️ Service Worker: Registered but not controlling';
+                        window.log('⚠️ Service Worker registered but not controlling', 'warning');
+                        return false;
+                    }
+                } else {
+                    throw new Error('Service Worker not supported');
+                }
+            } catch (error) {
+                document.getElementById('sw-status').innerHTML = 
+                    '<span class="status-indicator status-error"></span>❌ Service Worker: ' + error.message;
+                window.log('❌ Service Worker test failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Test Cache Manager
+        async function checkCacheManager() {
+            try {
+                const module = await import('./services/cache-manager.js');
+                if (module.cacheManager) {
+                    document.getElementById('cache-manager-status').innerHTML = 
+                        '<span class="status-indicator status-ok"></span>✅ Cache Manager: Loaded';
+                    window.log('✅ Cache Manager loaded successfully', 'success');
+                    window.cacheManager = module.cacheManager;
+                    return true;
+                } else {
+                    throw new Error('cacheManager not exported');
+                }
+            } catch (error) {
+                document.getElementById('cache-manager-status').innerHTML = 
+                    '<span class="status-indicator status-error"></span>❌ Cache Manager: ' + error.message;
+                window.log('❌ Cache Manager test failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Test Storage
+        function checkStorage() {
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+                sessionStorage.setItem('test', 'test');
+                sessionStorage.removeItem('test');
+                
+                document.getElementById('storage-status').innerHTML = 
+                    '<span class="status-indicator status-ok"></span>✅ Storage: Available';
+                window.log('✅ Storage test passed', 'success');
+                return true;
+            } catch (error) {
+                document.getElementById('storage-status').innerHTML = 
+                    '<span class="status-indicator status-error"></span>❌ Storage: ' + error.message;
+                window.log('❌ Storage test failed: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Test functions for buttons
+        window.testCacheManager = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                // Test basic functionality
+                window.cacheManager.setMemoryCache('test_key', { data: 'test_value' }, 5000);
+                const retrieved = window.cacheManager.getMemoryCache('test_key');
+                
+                if (retrieved && retrieved.data === 'test_value') {
+                    window.log('✅ Cache Manager basic test passed', 'success');
+                    document.getElementById('cache-tests-log').innerHTML += '<div class="success">✅ Basic cache operations working</div>';
+                } else {
+                    throw new Error('Failed to retrieve cached data');
+                }
+            } catch (error) {
+                window.log('❌ Cache Manager test failed: ' + error.message, 'error');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="error">❌ Basic cache test failed</div>';
+            }
+        };
+
+        window.testBusinessEvents = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                const results = await window.cacheManager.invalidateByBusinessEvent('compliance_check_completed', {
+                    cuit: '20123456789'
+                });
+                
+                window.log('✅ Business event test completed', 'success');
+                document.getElementById('cache-tests-log').innerHTML += `<div class="success">✅ Business event invalidated ${results.length} patterns</div>`;
+            } catch (error) {
+                window.log('❌ Business event test failed: ' + error.message, 'error');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="error">❌ Business event test failed</div>';
+            }
+        };
+
+        window.testServiceWorkerComm = async function() {
+            if (!navigator.serviceWorker.controller) {
+                window.log('❌ Service Worker not controlling', 'error');
+                return;
+            }
+
+            try {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'INVALIDATE_PATTERN',
+                    pattern: 'test_pattern',
+                    timestamp: Date.now()
+                });
+                
+                window.log('✅ Service Worker message sent', 'success');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="success">✅ SW communication test sent</div>';
+            } catch (error) {
+                window.log('❌ Service Worker communication failed: ' + error.message, 'error');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="error">❌ SW communication failed</div>';
+            }
+        };
+
+        window.clearAllCaches = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                await window.cacheManager.clearAll();
+                window.log('✅ All caches cleared', 'success');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="success">✅ All caches cleared</div>';
+            } catch (error) {
+                window.log('❌ Clear all caches failed: ' + error.message, 'error');
+                document.getElementById('cache-tests-log').innerHTML += '<div class="error">❌ Clear all caches failed</div>';
+            }
+        };
+
+        window.getCacheStats = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                const stats = window.cacheManager.getStats();
+                document.getElementById('stats-display').innerHTML = `<pre>${JSON.stringify(stats, null, 2)}</pre>`;
+                window.log('✅ Cache stats retrieved', 'success');
+            } catch (error) {
+                window.log('❌ Get cache stats failed: ' + error.message, 'error');
+            }
+        };
+
+        window.getServiceWorkerStats = async function() {
+            if (!navigator.serviceWorker.controller) {
+                window.log('❌ Service Worker not controlling', 'error');
+                return;
+            }
+
+            try {
+                const channel = new MessageChannel();
+                
+                channel.port1.onmessage = (event) => {
+                    document.getElementById('stats-display').innerHTML += `<h4>Service Worker Stats:</h4><pre>${JSON.stringify(event.data, null, 2)}</pre>`;
+                    window.log('✅ SW stats retrieved', 'success');
+                };
+                
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'GET_CACHE_STATS'
+                }, [channel.port2]);
+                
+            } catch (error) {
+                window.log('❌ Get SW stats failed: ' + error.message, 'error');
+            }
+        };
+
+        window.testComplianceInvalidation = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                const results = await window.cacheManager.invalidateByBusinessEvent('compliance_check_completed', {
+                    cuit: '20123456789'
+                });
+                
+                document.getElementById('invalidation-log').innerHTML += `<div class="success">✅ Compliance invalidation: ${results.length} patterns affected</div>`;
+                window.log('✅ Compliance invalidation test completed', 'success');
+            } catch (error) {
+                document.getElementById('invalidation-log').innerHTML += '<div class="error">❌ Compliance invalidation failed</div>';
+                window.log('❌ Compliance invalidation failed: ' + error.message, 'error');
+            }
+        };
+
+        window.testContributorInvalidation = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                const results = await window.cacheManager.invalidateByBusinessEvent('contributor_updated', {
+                    cuit: '20987654321'
+                });
+                
+                document.getElementById('invalidation-log').innerHTML += `<div class="success">✅ Contributor invalidation: ${results.length} patterns affected</div>`;
+                window.log('✅ Contributor invalidation test completed', 'success');
+            } catch (error) {
+                document.getElementById('invalidation-log').innerHTML += '<div class="error">❌ Contributor invalidation failed</div>';
+                window.log('❌ Contributor invalidation failed: ' + error.message, 'error');
+            }
+        };
+
+        window.testDailySync = async function() {
+            if (!window.cacheManager) {
+                window.log('❌ Cache Manager not loaded', 'error');
+                return;
+            }
+
+            try {
+                const results = await window.cacheManager.invalidateByBusinessEvent('daily_sync');
+                
+                document.getElementById('invalidation-log').innerHTML += `<div class="success">✅ Daily sync invalidation: ${results.length} patterns affected</div>`;
+                window.log('✅ Daily sync test completed', 'success');
+            } catch (error) {
+                document.getElementById('invalidation-log').innerHTML += '<div class="error">❌ Daily sync invalidation failed</div>';
+                window.log('❌ Daily sync invalidation failed: ' + error.message, 'error');
+            }
+        };
+
+        window.clearLog = function() {
+            document.getElementById('live-log').innerHTML = '';
+        };
+
+        // Initialize tests
+        window.addEventListener('load', async function() {
+            window.log('🚀 Starting Phase 3 Cache Test Suite...', 'info');
+            
+            await checkBackend();
+            await checkServiceWorker();
+            await checkCacheManager();
+            checkStorage();
+            
+            window.log('📋 Test suite initialized. Use buttons to run specific tests.', 'info');
+        });
+
+        // Listen for Service Worker messages
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                window.log(`📨 SW Message: ${JSON.stringify(event.data)}`, 'info');
+            });
+        }
+    </script>
+</body>
+</html>

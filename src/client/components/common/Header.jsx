@@ -37,7 +37,10 @@ import {
     // Iconos Epic 3 - Compliance
     Shield,
     Target,
-    Clock
+    Clock,
+    LogOut,
+    UserCheck,
+    ChevronDown
 } from 'lucide-react';
 
 export const Header = ({
@@ -60,11 +63,13 @@ export const Header = ({
     const [searchError, setSearchError] = useState(null);
     const [activeSection, setActiveSection] = useState('main'); // 'main', 'ocr', 'invoices'
     const [showProfileModal, setShowProfileModal] = useState(false);
+    const [showUserDropdown, setShowUserDropdown] = useState(false);
     const { user, logout } = useAuth();
     const { hasPermission } = usePermissions();
 
     const searchRef = useRef(null);
     const dropdownRef = useRef(null);
+    const userDropdownRef = useRef(null);
 
     // Navegación por defecto si no se proporciona views
     const defaultViews = {
@@ -245,8 +250,36 @@ export const Header = ({
         }
     ];
 
-    // Resto del código existente del componente Header...
-    // (mantengo la funcionalidad existente)
+    // Función para manejar logout con cleanup de cache
+    const handleLogout = async () => {
+        try {
+            setShowUserDropdown(false);
+            
+            // Usar logout del contexto que ya incluye cache cleanup
+            await logout();
+            
+            // Redirigir manualmente a login ya que no tenemos router
+            window.location.href = '/';
+        } catch (error) {
+            console.error('Error durante logout:', error);
+            // Fallback: forzar recarga de página para limpiar estado
+            window.location.reload();
+        }
+    };
+
+    // Cerrar dropdown al hacer click afuera
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (userDropdownRef.current && !userDropdownRef.current.contains(event.target)) {
+                setShowUserDropdown(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, []);
 
     // Función para renderizar elementos de navegación
     const renderNavigationItems = (items) => {
@@ -329,11 +362,11 @@ export const Header = ({
                             <Menu className="h-6 w-6" />
                         </button>
                         {user && (
-                            <div className="relative">
+                            <div className="relative" ref={userDropdownRef}>
                                 <button
-                                    onClick={() => setShowProfileModal(true)}
+                                    onClick={() => setShowUserDropdown(!showUserDropdown)}
                                     className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
-                                    title={`Usuario: ${user.name}`}
+                                    title={`Usuario: ${user.name} - Click para opciones`}
                                 >
                                     <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                                         <User className="h-5 w-5 text-white" />
@@ -341,7 +374,56 @@ export const Header = ({
                                     <span className="hidden sm:block text-sm font-medium text-gray-700 max-w-32 truncate">
                                         {user.name}
                                     </span>
+                                    <ChevronDown className="h-4 w-4 text-gray-500" />
                                 </button>
+
+                                {/* Dropdown Menu */}
+                                {showUserDropdown && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                                        <div className="py-2">
+                                            {/* User Info */}
+                                            <div className="px-4 py-3 border-b border-gray-100">
+                                                <p className="text-sm font-medium text-gray-900">{user.name}</p>
+                                                <p className="text-sm text-gray-500">{user.email}</p>
+                                            </div>
+                                            
+                                            {/* Menu Items */}
+                                            <div className="py-1">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowUserDropdown(false);
+                                                        setShowProfileModal(true);
+                                                    }}
+                                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <UserCheck className="h-4 w-4 mr-3" />
+                                                    Ver Perfil
+                                                </button>
+                                                
+                                                <button
+                                                    onClick={() => {
+                                                        setShowUserDropdown(false);
+                                                        onViewChange('settings');
+                                                    }}
+                                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                                >
+                                                    <Settings className="h-4 w-4 mr-3" />
+                                                    Configuración
+                                                </button>
+                                                
+                                                <div className="border-t border-gray-100 my-1"></div>
+                                                
+                                                <button
+                                                    onClick={handleLogout}
+                                                    className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                                >
+                                                    <LogOut className="h-4 w-4 mr-3" />
+                                                    Cerrar Sesión
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

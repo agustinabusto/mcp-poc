@@ -14,29 +14,28 @@ export class ContributorsModel {
             CREATE TABLE IF NOT EXISTS ${ContributorsModel.tableName} (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 cuit TEXT UNIQUE NOT NULL,
-                razon_social TEXT NOT NULL,
-                email TEXT,
-                telefono TEXT,
-                direccion TEXT,
-                situacion_afip TEXT DEFAULT 'no_categorizado',
-                categoria TEXT DEFAULT 'no_categorizado',
-                tags TEXT, -- JSON array as text
-                afip_data TEXT, -- JSON object as text
-                last_afip_sync DATETIME,
-                fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-                fecha_modificacion DATETIME DEFAULT CURRENT_TIMESTAMP,
-                activo INTEGER DEFAULT 1,
-                notas TEXT
+                business_name TEXT NOT NULL,
+                contact_email TEXT,
+                contact_phone TEXT,
+                status TEXT DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'suspended')),
+                risk_level TEXT DEFAULT 'medium' CHECK (risk_level IN ('low', 'medium', 'high', 'critical')),
+                last_compliance_check DATETIME,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                active INTEGER DEFAULT 1,
+                category TEXT,
+                compliance_status TEXT DEFAULT 'unknown',
+                deleted_at DATETIME
             )
         `;
 
         const createIndexes = [
             `CREATE INDEX IF NOT EXISTS idx_contributors_cuit ON ${ContributorsModel.tableName}(cuit)`,
-            `CREATE INDEX IF NOT EXISTS idx_contributors_razon_social ON ${ContributorsModel.tableName}(razon_social)`,
-            `CREATE INDEX IF NOT EXISTS idx_contributors_situacion_afip ON ${ContributorsModel.tableName}(situacion_afip)`,
-            `CREATE INDEX IF NOT EXISTS idx_contributors_categoria ON ${ContributorsModel.tableName}(categoria)`,
-            `CREATE INDEX IF NOT EXISTS idx_contributors_activo ON ${ContributorsModel.tableName}(activo)`,
-            `CREATE INDEX IF NOT EXISTS idx_contributors_fecha_creacion ON ${ContributorsModel.tableName}(fecha_creacion)`
+            `CREATE INDEX IF NOT EXISTS idx_contributors_business_name ON ${ContributorsModel.tableName}(business_name)`,
+            `CREATE INDEX IF NOT EXISTS idx_contributors_status ON ${ContributorsModel.tableName}(status)`,
+            `CREATE INDEX IF NOT EXISTS idx_contributors_category ON ${ContributorsModel.tableName}(category)`,
+            `CREATE INDEX IF NOT EXISTS idx_contributors_active ON ${ContributorsModel.tableName}(active)`,
+            `CREATE INDEX IF NOT EXISTS idx_contributors_created_at ON ${ContributorsModel.tableName}(created_at)`
         ];
 
         try {
@@ -169,37 +168,33 @@ export class ContributorsModel {
             const sql = `
                 INSERT INTO ${ContributorsModel.tableName} (
                     cuit,
-                    razon_social,
-                    email,
-                    telefono,
-                    direccion,
-                    situacion_afip,
-                    categoria,
-                    tags,
-                    afip_data,
-                    last_afip_sync,
-                    fecha_creacion,
-                    fecha_modificacion,
-                    activo,
-                    notas
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    business_name,
+                    contact_email,
+                    contact_phone,
+                    status,
+                    risk_level,
+                    last_compliance_check,
+                    created_at,
+                    updated_at,
+                    active,
+                    category,
+                    compliance_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `;
 
             const params = [
                 contributorData.cuit,
-                contributorData.razonSocial,
-                contributorData.email || null,
-                contributorData.telefono || null,
-                contributorData.direccion || null,
-                contributorData.situacionAfip || 'no_categorizado',
-                contributorData.categoria || 'no_categorizado',
-                contributorData.tags ? JSON.stringify(contributorData.tags) : null,
-                contributorData.afipData ? JSON.stringify(contributorData.afipData) : null,
-                contributorData.lastAfipSync || null,
-                contributorData.fechaCreacion || new Date().toISOString(),
-                contributorData.fechaModificacion || new Date().toISOString(),
-                contributorData.activo !== undefined ? (contributorData.activo ? 1 : 0) : 1,
-                contributorData.notas || null
+                contributorData.businessName || contributorData.business_name || contributorData.razonSocial,
+                contributorData.contactEmail || contributorData.contact_email || contributorData.email || null,
+                contributorData.contactPhone || contributorData.contact_phone || contributorData.telefono || null,
+                contributorData.status || 'active',
+                contributorData.riskLevel || contributorData.risk_level || 'medium',
+                contributorData.lastComplianceCheck || contributorData.last_compliance_check || null,
+                contributorData.createdAt || contributorData.created_at || new Date().toISOString(),
+                contributorData.updatedAt || contributorData.updated_at || new Date().toISOString(),
+                contributorData.active !== undefined ? (contributorData.active ? 1 : 0) : 1,
+                contributorData.category || contributorData.categoria || null,
+                contributorData.complianceStatus || contributorData.compliance_status || 'unknown'
             ];
 
             const result = await db.run(sql, params);

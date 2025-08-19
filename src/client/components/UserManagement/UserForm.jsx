@@ -1,6 +1,16 @@
 // src/client/components/UserManagement/UserForm.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+// Import condicional para evitar errores cuando no hay Router
+let useNavigate, useParams;
+try {
+    const routerDom = require('react-router-dom');
+    useNavigate = routerDom.useNavigate;
+    useParams = routerDom.useParams;
+} catch (e) {
+    // Fallback si react-router-dom no está disponible
+    useNavigate = () => () => console.warn('Navigation not available');
+    useParams = () => ({});
+}
 import { UserService } from '../../services/userService';
 import { useAuth } from '../../hooks/useAuth';
 import { LoadingSpinner } from '../common/LoadingSpinner';

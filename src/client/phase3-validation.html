@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phase 3 Validation - Cache Invalidation System</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .header { text-align: center; margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .test-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin: 20px 0; }
+        .test-card { padding: 20px; border: 2px solid #e9ecef; border-radius: 8px; background: #fff; }
+        .test-card.success { border-color: #28a745; background: #f8fff9; }
+        .test-card.error { border-color: #dc3545; background: #fff8f8; }
+        .test-card.warning { border-color: #ffc107; background: #fffbf0; }
+        .status-icon { font-size: 24px; margin-right: 10px; }
+        .test-title { font-size: 18px; font-weight: bold; margin-bottom: 10px; }
+        .test-description { margin-bottom: 15px; color: #666; }
+        .test-result { padding: 10px; border-radius: 4px; margin: 5px 0; font-family: monospace; font-size: 12px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        button { padding: 12px 24px; margin: 5px; border: none; border-radius: 6px; cursor: pointer; background: #007bff; color: white; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .stats-display { background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 10px 0; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; }
+        .demo-section { margin: 20px 0; padding: 20px; background: #f8f9fa; border-radius: 8px; }
+        .log-container { height: 250px; overflow-y: auto; border: 1px solid #dee2e6; padding: 10px; background: #f8f9fa; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Phase 3 Validation Suite</h1>
+            <h2>Cache Invalidation System - AFIP Monitor MCP</h2>
+            <p>Comprehensive validation of cache invalidation coordination across all layers</p>
+        </div>
+
+        <div class="test-grid">
+            <!-- Core System Tests -->
+            <div class="test-card" id="core-card">
+                <div class="test-title">
+                    <span class="status-icon" id="core-icon">🔄</span>
+                    Core System
+                </div>
+                <div class="test-description">Cache Manager, Service Worker, Storage</div>
+                <button onclick="runCoreTests()">Run Core Tests</button>
+                <div id="core-results"></div>
+            </div>
+
+            <!-- Business Events Tests -->
+            <div class="test-card" id="events-card">
+                <div class="test-title">
+                    <span class="status-icon" id="events-icon">🔄</span>
+                    Business Events
+                </div>
+                <div class="test-description">Event mapping and pattern invalidation</div>
+                <button onclick="runBusinessEventTests()">Run Business Tests</button>
+                <div id="events-results"></div>
+            </div>
+
+            <!-- Invalidation Tests -->
+            <div class="test-card" id="invalidation-card">
+                <div class="test-title">
+                    <span class="status-icon" id="invalidation-icon">🔄</span>
+                    Cache Invalidation
+                </div>
+                <div class="test-description">Cross-layer invalidation coordination</div>
+                <button onclick="runInvalidationTests()">Run Invalidation Tests</button>
+                <div id="invalidation-results"></div>
+            </div>
+
+            <!-- Hooks Integration Tests -->
+            <div class="test-card" id="hooks-card">
+                <div class="test-title">
+                    <span class="status-icon" id="hooks-icon">🔄</span>
+                    React Hooks
+                </div>
+                <div class="test-description">useCacheInvalidation integration</div>
+                <button onclick="runHooksTests()">Run Hooks Tests</button>
+                <div id="hooks-results"></div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h3>🎯 Interactive Demo</h3>
+            <button onclick="demoCompliance()">Demo: Compliance Check</button>
+            <button onclick="demoContributor()">Demo: Contributor Update</button>
+            <button onclick="demoDailySync()">Demo: Daily Sync</button>
+            <button onclick="demoLogout()">Demo: User Logout</button>
+            <button onclick="clearDemo()">Clear Demo</button>
+            <div id="demo-results" class="stats-display"></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>📊 Live Cache Statistics</h3>
+            <button onclick="getStats()">Get Cache Stats</button>
+            <button onclick="getSWStats()">Get SW Stats</button>
+            <div id="stats-results" class="stats-display"></div>
+        </div>
+
+        <div class="demo-section">
+            <h3>📝 Live Event Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="live-log" class="log-container"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        let cacheManager = null;
+        let testResults = {
+            core: 0,
+            events: 0,
+            invalidation: 0,
+            hooks: 0
+        };
+
+        // Global logging
+        window.log = function(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('live-log');
+            const logEntry = document.createElement('div');
+            logEntry.className = `test-result ${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        };
+
+        function updateCard(cardName, passed, total) {
+            const card = document.getElementById(`${cardName}-card`);
+            const icon = document.getElementById(`${cardName}-icon`);
+            
+            if (passed === total && total > 0) {
+                card.className = 'test-card success';
+                icon.textContent = '✅';
+            } else if (passed > 0) {
+                card.className = 'test-card warning';
+                icon.textContent = '⚠️';
+            } else {
+                card.className = 'test-card error';
+                icon.textContent = '❌';
+            }
+        }
+
+        function addResult(containerId, message, type) {
+            const container = document.getElementById(containerId);
+            const result = document.createElement('div');
+            result.className = `test-result ${type}`;
+            result.textContent = message;
+            container.appendChild(result);
+        }
+
+        // Core system tests
+        window.runCoreTests = async function() {
+            const results = document.getElementById('core-results');
+            results.innerHTML = '';
+            let passed = 0;
+            const total = 4;
+
+            window.log('🔧 Starting core system tests...', 'info');
+
+            // Test 1: Cache Manager Import
+            try {
+                const module = await import('./services/cache-manager.js');
+                if (module.cacheManager) {
+                    cacheManager = module.cacheManager;
+                    addResult('core-results', '✅ Cache Manager loaded', 'success');
+                    passed++;
+                    window.log('✅ Cache Manager imported successfully', 'success');
+                } else {
+                    throw new Error('cacheManager not exported');
+                }
+            } catch (error) {
+                addResult('core-results', `❌ Cache Manager: ${error.message}`, 'error');
+                window.log(`❌ Cache Manager failed: ${error.message}`, 'error');
+            }
+
+            // Test 2: Service Worker
+            try {
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                    addResult('core-results', '✅ Service Worker active', 'success');
+                    passed++;
+                    window.log('✅ Service Worker is active', 'success');
+                } else {
+                    throw new Error('Service Worker not controlling');
+                }
+            } catch (error) {
+                addResult('core-results', `❌ Service Worker: ${error.message}`, 'error');
+                window.log(`❌ Service Worker: ${error.message}`, 'error');
+            }
+
+            // Test 3: Storage
+            try {
+                localStorage.setItem('test', 'test');
+                localStorage.removeItem('test');
+                addResult('core-results', '✅ Storage available', 'success');
+                passed++;
+                window.log('✅ Storage test passed', 'success');
+            } catch (error) {
+                addResult('core-results', `❌ Storage: ${error.message}`, 'error');
+                window.log(`❌ Storage: ${error.message}`, 'error');
+            }
+
+            // Test 4: Basic Cache Operations
+            try {
+                if (cacheManager) {
+                    cacheManager.setMemoryCache('test_key', { test: 'value' }, 5000);
+                    const retrieved = cacheManager.getMemoryCache('test_key');
+                    if (retrieved && retrieved.test === 'value') {
+                        addResult('core-results', '✅ Cache operations working', 'success');
+                        passed++;
+                        window.log('✅ Basic cache operations working', 'success');
+                    } else {
+                        throw new Error('Cache operations failed');
+                    }
+                } else {
+                    throw new Error('Cache Manager not available');
+                }
+            } catch (error) {
+                addResult('core-results', `❌ Cache ops: ${error.message}`, 'error');
+                window.log(`❌ Cache operations: ${error.message}`, 'error');
+            }
+
+            testResults.core = passed;
+            updateCard('core', passed, total);
+            window.log(`🔧 Core tests completed: ${passed}/${total}`, passed === total ? 'success' : 'warning');
+        };
+
+        // Business events tests
+        window.runBusinessEventTests = async function() {
+            const results = document.getElementById('events-results');
+            results.innerHTML = '';
+            let passed = 0;
+            const total = 4;
+
+            window.log('📋 Starting business events tests...', 'info');
+
+            if (!cacheManager) {
+                addResult('events-results', '❌ Cache Manager not loaded', 'error');
+                updateCard('events', 0, total);
+                return;
+            }
+
+            const events = [
+                { name: 'compliance_check_completed', data: { cuit: '20123456789' }, expectedPatterns: 3 },
+                { name: 'contributor_updated', data: { cuit: '20987654321' }, expectedPatterns: 3 },
+                { name: 'user_logout', data: {}, expectedPatterns: 4 },
+                { name: 'daily_sync', data: {}, expectedPatterns: 4 }
+            ];
+
+            for (const event of events) {
+                try {
+                    const patterns = cacheManager.getInvalidationPatternsForEvent(event.name, event.data);
+                    if (patterns.length >= event.expectedPatterns) {
+                        addResult('events-results', `✅ ${event.name}: ${patterns.length} patterns`, 'success');
+                        passed++;
+                        window.log(`✅ ${event.name}: ${patterns.join(', ')}`, 'success');
+                    } else {
+                        throw new Error(`Expected ${event.expectedPatterns}+ patterns, got ${patterns.length}`);
+                    }
+                } catch (error) {
+                    addResult('events-results', `❌ ${event.name}: ${error.message}`, 'error');
+                    window.log(`❌ ${event.name}: ${error.message}`, 'error');
+                }
+            }
+
+            testResults.events = passed;
+            updateCard('events', passed, total);
+            window.log(`📋 Business events tests completed: ${passed}/${total}`, passed === total ? 'success' : 'warning');
+        };
+
+        // Invalidation tests
+        window.runInvalidationTests = async function() {
+            const results = document.getElementById('invalidation-results');
+            results.innerHTML = '';
+            let passed = 0;
+            const total = 3;
+
+            window.log('🔄 Starting invalidation tests...', 'info');
+
+            if (!cacheManager) {
+                addResult('invalidation-results', '❌ Cache Manager not loaded', 'error');
+                updateCard('invalidation', 0, total);
+                return;
+            }
+
+            // Test 1: Pattern invalidation
+            try {
+                const result = await cacheManager.invalidatePattern('test_pattern');
+                if (result.pattern === 'test_pattern') {
+                    addResult('invalidation-results', '✅ Pattern invalidation works', 'success');
+                    passed++;
+                    window.log('✅ Pattern invalidation test passed', 'success');
+                } else {
+                    throw new Error('Invalid result');
+                }
+            } catch (error) {
+                addResult('invalidation-results', `❌ Pattern invalidation: ${error.message}`, 'error');
+                window.log(`❌ Pattern invalidation: ${error.message}`, 'error');
+            }
+
+            // Test 2: Business event invalidation
+            try {
+                const results = await cacheManager.invalidateByBusinessEvent('compliance_check_completed', { cuit: '20123456789' });
+                if (results.length >= 3) {
+                    addResult('invalidation-results', `✅ Business event invalidation: ${results.length} patterns`, 'success');
+                    passed++;
+                    window.log('✅ Business event invalidation test passed', 'success');
+                } else {
+                    throw new Error(`Expected 3+ results, got ${results.length}`);
+                }
+            } catch (error) {
+                addResult('invalidation-results', `❌ Business event: ${error.message}`, 'error');
+                window.log(`❌ Business event invalidation: ${error.message}`, 'error');
+            }
+
+            // Test 3: Service Worker communication
+            try {
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'INVALIDATE_PATTERN',
+                        pattern: 'test_sw_pattern',
+                        timestamp: Date.now()
+                    });
+                    addResult('invalidation-results', '✅ SW communication sent', 'success');
+                    passed++;
+                    window.log('✅ Service Worker communication test passed', 'success');
+                } else {
+                    throw new Error('Service Worker not controlling');
+                }
+            } catch (error) {
+                addResult('invalidation-results', `❌ SW communication: ${error.message}`, 'error');
+                window.log(`❌ SW communication: ${error.message}`, 'error');
+            }
+
+            testResults.invalidation = passed;
+            updateCard('invalidation', passed, total);
+            window.log(`🔄 Invalidation tests completed: ${passed}/${total}`, passed === total ? 'success' : 'warning');
+        };
+
+        // Hooks tests
+        window.runHooksTests = async function() {
+            const results = document.getElementById('hooks-results');
+            results.innerHTML = '';
+            let passed = 0;
+            const total = 2;
+
+            window.log('🎣 Starting hooks tests...', 'info');
+
+            // Test 1: useCacheInvalidation import
+            try {
+                const module = await import('./hooks/useCacheInvalidation.js');
+                if (module.useCacheInvalidation) {
+                    addResult('hooks-results', '✅ useCacheInvalidation imported', 'success');
+                    passed++;
+                    window.log('✅ useCacheInvalidation imported successfully', 'success');
+                } else {
+                    throw new Error('useCacheInvalidation not exported');
+                }
+            } catch (error) {
+                addResult('hooks-results', `❌ useCacheInvalidation: ${error.message}`, 'error');
+                window.log(`❌ useCacheInvalidation: ${error.message}`, 'error');
+            }
+
+            // Test 2: useCompliance import  
+            try {
+                const module = await import('./hooks/useCompliance.js');
+                if (module.useCompliance) {
+                    addResult('hooks-results', '✅ useCompliance imported', 'success');
+                    passed++;
+                    window.log('✅ useCompliance imported successfully', 'success');
+                } else {
+                    throw new Error('useCompliance not exported');
+                }
+            } catch (error) {
+                addResult('hooks-results', `❌ useCompliance: ${error.message}`, 'error');
+                window.log(`❌ useCompliance: ${error.message}`, 'error');
+            }
+
+            testResults.hooks = passed;
+            updateCard('hooks', passed, total);
+            window.log(`🎣 Hooks tests completed: ${passed}/${total}`, passed === total ? 'success' : 'warning');
+        };
+
+        // Demo functions
+        window.demoCompliance = async function() {
+            if (!cacheManager) return;
+            try {
+                const results = await cacheManager.invalidateByBusinessEvent('compliance_check_completed', { cuit: '20123456789' });
+                document.getElementById('demo-results').innerHTML = `<h4>Compliance Check Demo</h4><pre>Invalidated patterns: ${results.map(r => r.pattern).join(', ')}</pre>`;
+                window.log(`🎯 Compliance demo: invalidated ${results.length} patterns`, 'info');
+            } catch (error) {
+                window.log(`❌ Compliance demo failed: ${error.message}`, 'error');
+            }
+        };
+
+        window.demoContributor = async function() {
+            if (!cacheManager) return;
+            try {
+                const results = await cacheManager.invalidateByBusinessEvent('contributor_updated', { cuit: '20987654321' });
+                document.getElementById('demo-results').innerHTML = `<h4>Contributor Update Demo</h4><pre>Invalidated patterns: ${results.map(r => r.pattern).join(', ')}</pre>`;
+                window.log(`🎯 Contributor demo: invalidated ${results.length} patterns`, 'info');
+            } catch (error) {
+                window.log(`❌ Contributor demo failed: ${error.message}`, 'error');
+            }
+        };
+
+        window.demoDailySync = async function() {
+            if (!cacheManager) return;
+            try {
+                const results = await cacheManager.invalidateByBusinessEvent('daily_sync');
+                document.getElementById('demo-results').innerHTML = `<h4>Daily Sync Demo</h4><pre>Invalidated patterns: ${results.map(r => r.pattern).join(', ')}</pre>`;
+                window.log(`🎯 Daily sync demo: invalidated ${results.length} patterns`, 'info');
+            } catch (error) {
+                window.log(`❌ Daily sync demo failed: ${error.message}`, 'error');
+            }
+        };
+
+        window.demoLogout = async function() {
+            if (!cacheManager) return;
+            try {
+                const results = await cacheManager.invalidateByBusinessEvent('user_logout');
+                document.getElementById('demo-results').innerHTML = `<h4>User Logout Demo</h4><pre>Invalidated patterns: ${results.map(r => r.pattern).join(', ')}</pre>`;
+                window.log(`🎯 Logout demo: invalidated ${results.length} patterns`, 'info');
+            } catch (error) {
+                window.log(`❌ Logout demo failed: ${error.message}`, 'error');
+            }
+        };
+
+        window.clearDemo = function() {
+            document.getElementById('demo-results').innerHTML = '';
+        };
+
+        window.getStats = function() {
+            if (!cacheManager) return;
+            const stats = cacheManager.getStats();
+            document.getElementById('stats-results').innerHTML = `<h4>Cache Manager Stats</h4><pre>${JSON.stringify(stats, null, 2)}</pre>`;
+            window.log('📊 Cache stats retrieved', 'info');
+        };
+
+        window.getSWStats = function() {
+            if (!navigator.serviceWorker.controller) return;
+            const channel = new MessageChannel();
+            channel.port1.onmessage = (event) => {
+                document.getElementById('stats-results').innerHTML += `<h4>Service Worker Stats</h4><pre>${JSON.stringify(event.data, null, 2)}</pre>`;
+                window.log('📊 SW stats retrieved', 'info');
+            };
+            navigator.serviceWorker.controller.postMessage({ type: 'GET_CACHE_STATS' }, [channel.port2]);
+        };
+
+        window.clearLog = function() {
+            document.getElementById('live-log').innerHTML = '';
+        };
+
+        // Auto-run core tests
+        window.addEventListener('load', async function() {
+            window.log('🚀 Phase 3 Validation Suite initialized', 'info');
+            setTimeout(async () => {
+                await runCoreTests();
+                if (testResults.core > 0) {
+                    setTimeout(runBusinessEventTests, 1000);
+                }
+            }, 1000);
+        });
+
+        // Listen for SW messages
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.addEventListener('message', (event) => {
+                window.log(`📨 SW Message: ${event.data.type}`, 'info');
+            });
+        }
+    </script>
+</body>
+</html>

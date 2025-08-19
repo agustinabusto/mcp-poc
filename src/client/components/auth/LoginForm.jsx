@@ -6,9 +6,11 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useCacheInvalidation } from '../../hooks/useCacheInvalidation.js';
 
 const LoginForm = ({ onToggleForm, onForgotPassword }) => {
     const { login, loading, error } = useAuth();
+    const { invalidateOnEvent } = useCacheInvalidation();
     const [formData, setFormData] = useState({
         email: '',
         password: ''
@@ -41,10 +43,20 @@ const LoginForm = ({ onToggleForm, onForgotPassword }) => {
         if (!validateForm()) return;
 
         try {
-            await login(formData, {
+            const result = await login(formData, {
                 userAgent: navigator.userAgent,
                 deviceId: localStorage.getItem('@bookkeeper/device_id')
             });
+
+            // Invalidar cachés adicionales después del login exitoso
+            try {
+                await invalidateOnEvent('user_login', { 
+                    userId: result?.user?.id,
+                    email: formData.email 
+                });
+            } catch (cacheError) {
+                console.warn('Error invalidating cache after login:', cacheError);
+            }
         } catch (error) {
             console.error('Error en login:', error);
         }

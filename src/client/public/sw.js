@@ -258,58 +258,191 @@ self.addEventListener('fetch', (event) => {
     );
 });
 
-// Manejo de mensajes del cliente con invalidación de caché
+// Función auxiliar para verificar si un patrón coincide con una URL
+function matchesPattern(pathname, pattern) {
+  if (pattern.endsWith('_')) {
+    return pathname.startsWith(pattern);
+  }
+  return pathname === pattern || pathname.includes(pattern);
+}
+
+// Manejo de mensajes del cliente con invalidación de caché mejorada
 self.addEventListener('message', async (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('[SW] Recibido comando SKIP_WAITING');
-    self.skipWaiting();
-  }
+  const data = event.data;
   
-  if (event.data && event.data.type === 'CHECK_CONNECTION') {
-    event.ports[0].postMessage({
-      type: 'CONNECTION_STATUS',
-      online: navigator.onLine
-    });
-  }
+  if (!data || !data.type) return;
+
+  console.log(`[SW] Received message: ${data.type}`, data);
   
-  // Manejo de invalidación de caché por patrón
-  if (event.data && event.data.type === 'INVALIDATE_PATTERN') {
-    const pattern = event.data.pattern;
-    console.log(`[SW] Invalidando caché con patrón: ${pattern}`);
+  switch (data.type) {
+    case 'SKIP_WAITING':
+      console.log('[SW] Recibido comando SKIP_WAITING');
+      self.skipWaiting();
+      break;
+      
+    case 'CHECK_CONNECTION':
+      if (event.ports && event.ports[0]) {
+        event.ports[0].postMessage({
+          type: 'CONNECTION_STATUS',
+          online: navigator.onLine
+        });
+      }
+      break;
+      
+    case 'INVALIDATE_PATTERN':
+      await handlePatternInvalidation(data.pattern, event);
+      break;
+      
+    case 'CLEAR_ALL_CACHES':
+      await handleClearAllCaches(event);
+      break;
+      
+    case 'GET_CACHE_STATS':
+      await handleGetCacheStats(event);
+      break;
+      
+    default:
+      console.warn(`[SW] Unknown message type: ${data.type}`);
+  }
+});
+
+// Función para manejar invalidación por patrón
+async function handlePatternInvalidation(pattern, event) {
+  console.log(`[SW] Invalidando caché con patrón: ${pattern}`);
+  
+  try {
+    let totalDeleted = 0;
+    const cacheNames = [CACHE_NAME, STATIC_CACHE_NAME];
     
-    try {
-      const cache = await caches.open(CACHE_NAME);
+    for (const cacheName of cacheNames) {
+      const cache = await caches.open(cacheName);
       const keys = await cache.keys();
       
       for (const request of keys) {
         const url = new URL(request.url);
-        if (url.pathname.includes(pattern)) {
+        if (matchesPattern(url.pathname, pattern)) {
           await cache.delete(request);
-          console.log(`[SW] Eliminado del caché: ${request.url}`);
+          totalDeleted++;
+          console.log(`[SW] Eliminado del caché (${cacheName}): ${request.url}`);
         }
       }
-      
-      // Responder al cliente
-      if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({
-          type: 'PATTERN_INVALIDATED',
-          pattern: pattern,
-          success: true
-        });
-      }
-    } catch (error) {
-      console.error('[SW] Error invalidating cache pattern:', error);
-      if (event.ports && event.ports[0]) {
-        event.ports[0].postMessage({
-          type: 'PATTERN_INVALIDATED',
-          pattern: pattern,
-          success: false,
-          error: error.message
-        });
-      }
+    }
+    
+    // Notificar a todos los clientes sobre la invalidación
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+      client.postMessage({
+        type: 'CACHE_INVALIDATED',
+        pattern: pattern,
+        deleted: totalDeleted,
+        timestamp: Date.now()
+      });
+    });
+    
+    // Responder al cliente específico si hay puerto
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'PATTERN_INVALIDATED',
+        pattern: pattern,
+        success: true,
+        deleted: totalDeleted
+      });
+    }
+    
+  } catch (error) {
+    console.error('[SW] Error invalidating cache pattern:', error);
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'PATTERN_INVALIDATED',
+        pattern: pattern,
+        success: false,
+        error: error.message
+      });
     }
   }
-});
+}
+
+// Función para limpiar todas las cachés
+async function handleClearAllCaches(event) {
+  console.warn('[SW] Clearing all caches');
+  
+  try {
+    const cacheNames = await caches.keys();
+    let totalDeleted = 0;
+    
+    for (const cacheName of cacheNames) {
+      if (cacheName.startsWith('afip-monitor-')) {
+        const deleted = await caches.delete(cacheName);
+        if (deleted) totalDeleted++;
+        console.log(`[SW] Deleted cache: ${cacheName}`);
+      }
+    }
+    
+    // Notificar a todos los clientes
+    const clients = await self.clients.matchAll();
+    clients.forEach(client => {
+      client.postMessage({
+        type: 'ALL_CACHES_CLEARED',
+        deleted: totalDeleted,
+        timestamp: Date.now()
+      });
+    });
+    
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'ALL_CACHES_CLEARED',
+        success: true,
+        deleted: totalDeleted
+      });
+    }
+    
+  } catch (error) {
+    console.error('[SW] Error clearing all caches:', error);
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'ALL_CACHES_CLEARED',
+        success: false,
+        error: error.message
+      });
+    }
+  }
+}
+
+// Función para obtener estadísticas de caché
+async function handleGetCacheStats(event) {
+  try {
+    const stats = {};
+    const cacheNames = await caches.keys();
+    
+    for (const cacheName of cacheNames) {
+      if (cacheName.startsWith('afip-monitor-')) {
+        const cache = await caches.open(cacheName);
+        const keys = await cache.keys();
+        stats[cacheName] = {
+          entryCount: keys.length,
+          urls: keys.map(req => req.url)
+        };
+      }
+    }
+    
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'CACHE_STATS',
+        stats: stats,
+        timestamp: Date.now()
+      });
+    }
+    
+  } catch (error) {
+    console.error('[SW] Error getting cache stats:', error);
+    if (event.ports && event.ports[0]) {
+      event.ports[0].postMessage({
+        type: 'CACHE_STATS',
+        error: error.message
+      });
+    }
+  }
+}
 
 // Notificaciones Push (para futuras implementaciones)
 self.addEventListener('push', (event) => {

@@ -2,8 +2,10 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff, Mail, Lock, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
 import { authService } from '../../services/auth-service.js';
+import { useCacheInvalidation } from '../../hooks/useCacheInvalidation.js';
 
 const RegisterForm = ({ onToggleForm }) => {
+    const { invalidateOnEvent } = useCacheInvalidation();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         name: '',
@@ -53,11 +55,21 @@ const RegisterForm = ({ onToggleForm }) => {
         setLoading(true);
 
         try {
-            await authService.register({
+            const result = await authService.register({
                 name: formData.name.trim(),
                 email: formData.email,
                 password: formData.password
             });
+
+            // Invalidar cachés adicionales después del registro
+            try {
+                await invalidateOnEvent('user_registered', { 
+                    userId: result.user?.id,
+                    email: result.user?.email || formData.email 
+                });
+            } catch (cacheError) {
+                console.warn('Error invalidating cache after registration:', cacheError);
+            }
 
             setRegistrationSuccess(true);
 
