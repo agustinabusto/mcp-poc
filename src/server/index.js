@@ -47,6 +47,8 @@ import {
 import groqChatRoutes from './routes/groq-chat.js';
 import ocrRoutes from './routes/ocr-routes.js';
 import authRoutes from './routes/auth-routes.js';
+import ocrMLRoutes from './routes/ocr-ml-routes.js';
+import afipValidationRoutes from './routes/afip-validation-routes.js';
 
 // Importar nueva ruta de contributors
 import contributorsRoutes from './routes/contributors.js';
@@ -317,6 +319,12 @@ app.use('/api/contributors', contributorsRoutes);
 // Rutas existentes
 app.use('/api/groq', groqChatRoutes);
 app.use('/api/ocr', ocrRoutes);
+
+// Rutas ML para OCR (NUEVA)
+app.use('/api/ocr/ml', ocrMLRoutes);
+
+// Rutas de validación AFIP (NUEVA - User Story 4.2)
+app.use('/api/afip', afipValidationRoutes);
 
 // Las rutas de compliance y notificaciones se configuran en startServer() después de la inicialización de la DB
 
@@ -1068,6 +1076,17 @@ async function startServer() {
         app.locals.escalationEngine = escalationEngine;
         app.locals.emailService = emailService;
         app.locals.database = DatabaseService;
+        app.locals.config = {
+            database: {
+                path: process.env.DATABASE_PATH || 'data/afip_monitor.db'
+            },
+            openai: {
+                apiKey: process.env.OPENAI_API_KEY
+            },
+            ocr: {
+                maxWorkers: parseInt(process.env.OCR_MAX_WORKERS) || 3
+            }
+        };
         app.locals.logger = {
             info: (...args) => console.log(...args),
             error: (...args) => console.error(...args),
@@ -1205,6 +1224,26 @@ async function startServer() {
         // Inicializar WebSocket para tiempo real (si es necesario)
         const wss = new WebSocketServer({ server });
 
+        // Add broadcast functionality for AFIP validation updates
+        wss.broadcast = function(data) {
+            const message = JSON.stringify(data);
+            this.clients.forEach(client => {
+                if (client.readyState === client.OPEN) {
+                    try {
+                        client.send(message);
+                    } catch (error) {
+                        console.error('Error broadcasting WebSocket message:', error);
+                    }
+                }
+            });
+        };
+
+        // Make WebSocket server available to routes
+        app.use((req, res, next) => {
+            req.wsServer = wss;
+            next();
+        });
+
         wss.on('connection', (ws, req) => {
             console.log('🔌 Nueva conexión WebSocket');
 
@@ -1226,6 +1265,10 @@ async function startServer() {
 
             ws.on('close', () => {
                 console.log('🔌 Conexión WebSocket cerrada');
+            });
+
+            ws.on('error', (error) => {
+                console.error('🔌 Error WebSocket:', error);
             });
 
             // Enviar mensaje de bienvenida
@@ -1296,6 +1339,17 @@ async function startServer() {
             console.log(`   • POST   http://${config.host}:${config.port}/api/ocr/extract-bank-statement - Extraer extracto`);
             console.log(`   • GET    http://${config.host}:${config.port}/api/ocr/stats/:clientId - Estadísticas OCR`);
             console.log(`   • GET    http://${config.host}:${config.port}/api/ocr/history/:clientId - Historial OCR`);
+
+            // Endpoints AFIP Validation (NUEVO - User Story 4.2)
+            console.log('\n🔍 Endpoints AFIP Validation:');
+            console.log(`   • POST   http://${config.host}:${config.port}/api/afip/validate/:documentId - Validar documento`);
+            console.log(`   • GET    http://${config.host}:${config.port}/api/afip/validate/:documentId - Obtener validaciones`);
+            console.log(`   • POST   http://${config.host}:${config.port}/api/afip/validate/cuit - Validar CUIT específico`);
+            console.log(`   • POST   http://${config.host}:${config.port}/api/afip/validate/cae - Validar CAE específico`);
+            console.log(`   • GET    http://${config.host}:${config.port}/api/afip/status - Estado conectividad AFIP`);
+            console.log(`   • POST   http://${config.host}:${config.port}/api/afip/retry-queue - Procesar cola reintentos`);
+            console.log(`   • GET    http://${config.host}:${config.port}/api/afip/validations/stats - Estadísticas validaciones`);
+            console.log(`   • GET    http://${config.host}:${config.port}/api/afip/validations/queue - Estado cola reintentos`);
 
             if (groqClient && groqClient.isInitialized) {
                 console.log('\n🤖 Endpoints IA:');

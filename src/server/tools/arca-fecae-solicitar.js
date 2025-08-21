@@ -3,7 +3,7 @@
  * Implementa el método FECAESolicitar de WSFEV1
  */
 
-import { Logger } from '../../../../utils/logger.js';
+import { Logger } from '../../../utils/logger.js';
 
 const logger = new Logger('FECAESolicitarTool');
 

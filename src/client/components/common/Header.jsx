@@ -92,6 +92,7 @@ export const Header = ({
         INVOICE_INTEGRATION: "invoice_integration",
         // Vistas OCR existentes
         OCR_PROCESSING: "ocr_processing",
+        OCR_HISTORY: "ocr_history",
         BANK_RECONCILIATION: "bank_reconciliation",
         TRANSACTION_CATEGORIZATION: "transaction_categorization",
         OCR_METRICS: "ocr_metrics",
@@ -225,6 +226,13 @@ export const Header = ({
             description: 'Procesamiento OCR de documentos',
             badge: ocrStats.pendingOcr || null,
             badgeColor: 'bg-purple-500',
+            section: 'ocr'
+        },
+        {
+            key: navigationViews.OCR_HISTORY || 'ocr_history',
+            label: 'Historial de Documentos',
+            icon: <History className="h-5 w-5" />,
+            description: 'Historial de documentos procesados',
             section: 'ocr'
         },
         {

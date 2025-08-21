@@ -279,3 +279,191 @@ FROM categorization_history
 WHERE created_at > datetime('now', '-30 days')
 GROUP BY client_id, category
 ORDER BY usage_count DESC;
+
+-- ==============================================
+-- MACHINE LEARNING ENHANCEMENT TABLES
+-- ==============================================
+
+-- Nueva tabla para almacenar patrones aprendidos por proveedor
+CREATE TABLE IF NOT EXISTS ml_document_patterns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cuit TEXT NOT NULL,
+    document_type TEXT NOT NULL,
+    pattern_data JSON NOT NULL,
+    confidence_threshold REAL DEFAULT 0.8,
+    usage_count INTEGER DEFAULT 1,
+    success_rate REAL DEFAULT 1.0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(cuit, document_type)
+);
+
+-- Tabla para tracking de correcciones y aprendizaje
+CREATE TABLE IF NOT EXISTS ml_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    field_name TEXT NOT NULL,
+    original_value TEXT,
+    corrected_value TEXT NOT NULL,
+    confidence_original REAL,
+    pattern_id INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES ocr_processing_log(id),
+    FOREIGN KEY (pattern_id) REFERENCES ml_document_patterns(id)
+);
+
+-- Índices para performance de ML
+CREATE INDEX IF NOT EXISTS idx_ml_patterns_cuit ON ml_document_patterns(cuit);
+CREATE INDEX IF NOT EXISTS idx_ml_patterns_type ON ml_document_patterns(document_type);
+CREATE INDEX IF NOT EXISTS idx_ml_corrections_document ON ml_corrections(document_id);
+CREATE INDEX IF NOT EXISTS idx_ml_corrections_pattern ON ml_corrections(pattern_id);
+
+-- Trigger para actualizar updated_at en ml_document_patterns
+CREATE TRIGGER IF NOT EXISTS update_ml_document_patterns_updated_at
+AFTER UPDATE ON ml_document_patterns
+FOR EACH ROW
+BEGIN
+    UPDATE ml_document_patterns 
+    SET updated_at = CURRENT_TIMESTAMP 
+    WHERE id = NEW.id;
+END;
+
+-- Vista para métricas de ML performance
+CREATE VIEW IF NOT EXISTS v_ml_performance AS
+SELECT 
+    p.cuit,
+    p.document_type,
+    p.usage_count,
+    p.success_rate,
+    COUNT(c.id) as total_corrections,
+    AVG(c.confidence_original) as avg_original_confidence,
+    MAX(p.updated_at) as last_updated
+FROM ml_document_patterns p
+LEFT JOIN ml_corrections c ON c.pattern_id = p.id
+GROUP BY p.cuit, p.document_type
+ORDER BY p.usage_count DESC, p.success_rate DESC;
+
+-- ==============================================
+-- AFIP REAL-TIME VALIDATION TABLES (User Story 4.2)
+-- ==============================================
+
+-- Tabla para almacenar resultados de validaciones AFIP
+CREATE TABLE IF NOT EXISTS afip_validations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    validation_type TEXT NOT NULL CHECK(validation_type IN ('cuit', 'cae', 'duplicate', 'tax_consistency', 'complete')),
+    validation_result JSON NOT NULL,
+    is_valid BOOLEAN NOT NULL,
+    severity TEXT DEFAULT 'info' CHECK(severity IN ('info', 'warning', 'error', 'critical')),
+    error_message TEXT,
+    response_time_ms INTEGER,
+    validated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    retry_count INTEGER DEFAULT 0,
+    expires_at DATETIME, -- Para cache invalidation
+    FOREIGN KEY (document_id) REFERENCES ocr_processing_log(id)
+);
+
+-- Tabla para tracking de conectividad AFIP
+CREATE TABLE IF NOT EXISTS afip_connectivity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    service_name TEXT NOT NULL CHECK(service_name IN ('cuit_validation', 'cae_validation', 'arca_tools', 'afip_web_services')),
+    endpoint TEXT,
+    status TEXT NOT NULL CHECK(status IN ('online', 'offline', 'degraded', 'timeout')),
+    response_time_ms INTEGER,
+    error_message TEXT,
+    checked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    success_rate REAL, -- Rolling success rate
+    last_success_at DATETIME
+);
+
+-- Tabla para cache de validaciones AFIP (para performance)
+CREATE TABLE IF NOT EXISTS afip_validation_cache (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cache_key TEXT UNIQUE NOT NULL,
+    cache_value JSON NOT NULL,
+    cache_type TEXT NOT NULL CHECK(cache_type IN ('cuit', 'cae', 'taxpayer_data')),
+    expires_at DATETIME NOT NULL,
+    hit_count INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabla para queue de validaciones pendientes
+CREATE TABLE IF NOT EXISTS afip_validation_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    validation_data JSON NOT NULL,
+    priority INTEGER DEFAULT 1 CHECK(priority BETWEEN 1 AND 5), -- 5 = highest priority
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'completed', 'failed', 'cancelled')),
+    attempts INTEGER DEFAULT 0,
+    next_retry_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (document_id) REFERENCES ocr_processing_log(id)
+);
+
+-- Índices para performance de validaciones AFIP
+CREATE INDEX IF NOT EXISTS idx_afip_validations_document_id ON afip_validations(document_id);
+CREATE INDEX IF NOT EXISTS idx_afip_validations_type ON afip_validations(validation_type);
+CREATE INDEX IF NOT EXISTS idx_afip_validations_severity ON afip_validations(severity);
+CREATE INDEX IF NOT EXISTS idx_afip_validations_date ON afip_validations(validated_at);
+CREATE INDEX IF NOT EXISTS idx_afip_connectivity_service ON afip_connectivity_log(service_name);
+CREATE INDEX IF NOT EXISTS idx_afip_connectivity_status ON afip_connectivity_log(status);
+CREATE INDEX IF NOT EXISTS idx_afip_connectivity_date ON afip_connectivity_log(checked_at);
+CREATE INDEX IF NOT EXISTS idx_afip_cache_key ON afip_validation_cache(cache_key);
+CREATE INDEX IF NOT EXISTS idx_afip_cache_expires ON afip_validation_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_afip_cache_type ON afip_validation_cache(cache_type);
+CREATE INDEX IF NOT EXISTS idx_afip_queue_status ON afip_validation_queue(status);
+CREATE INDEX IF NOT EXISTS idx_afip_queue_priority ON afip_validation_queue(priority, created_at);
+CREATE INDEX IF NOT EXISTS idx_afip_queue_retry ON afip_validation_queue(next_retry_at);
+
+-- Trigger para actualizar updated_at en cache
+CREATE TRIGGER IF NOT EXISTS update_afip_cache_updated_at
+AFTER UPDATE ON afip_validation_cache
+FOR EACH ROW
+BEGIN
+    UPDATE afip_validation_cache 
+    SET updated_at = CURRENT_TIMESTAMP,
+        hit_count = hit_count + 1
+    WHERE id = NEW.id;
+END;
+
+-- Trigger para actualizar updated_at en queue
+CREATE TRIGGER IF NOT EXISTS update_afip_queue_updated_at
+AFTER UPDATE ON afip_validation_queue
+FOR EACH ROW
+BEGIN
+    UPDATE afip_validation_queue 
+    SET updated_at = CURRENT_TIMESTAMP 
+    WHERE id = NEW.id;
+END;
+
+-- Vista para estadísticas de validaciones AFIP
+CREATE VIEW IF NOT EXISTS v_afip_validation_stats AS
+SELECT 
+    validation_type,
+    COUNT(*) as total_validations,
+    SUM(CASE WHEN is_valid = 1 THEN 1 ELSE 0 END) as valid_count,
+    ROUND(AVG(CASE WHEN is_valid = 1 THEN 100.0 ELSE 0.0 END), 2) as success_rate,
+    AVG(response_time_ms) as avg_response_time_ms,
+    MAX(validated_at) as last_validation,
+    COUNT(DISTINCT document_id) as unique_documents
+FROM afip_validations
+WHERE validated_at > datetime('now', '-30 days')
+GROUP BY validation_type
+ORDER BY success_rate DESC;
+
+-- Vista para estado de conectividad AFIP
+CREATE VIEW IF NOT EXISTS v_afip_connectivity_status AS
+SELECT 
+    service_name,
+    status,
+    COUNT(*) as check_count,
+    AVG(response_time_ms) as avg_response_time,
+    MAX(checked_at) as last_check,
+    AVG(success_rate) as avg_success_rate,
+    MAX(last_success_at) as last_success
+FROM afip_connectivity_log
+WHERE checked_at > datetime('now', '-1 days')
+GROUP BY service_name, status
+ORDER BY service_name, last_check DESC;

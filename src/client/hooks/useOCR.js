@@ -8,10 +8,18 @@ export const useOCR = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
-    // Construir URL base sin "/api" ya que API_BASE_URL ya lo incluye
-    const getFullUrl = (endpoint) => {
-        // API_BASE_URL ya incluye "/api", entonces solo agregamos el endpoint
-        return `${API_BASE_URL.replace('/api', '')}${endpoint}`;
+    // Para desarrollo con proxy de Vite, usar rutas relativas
+    const getApiUrl = (endpoint) => {
+        // Usar la misma lógica que api.js
+        const isDevelopment = import.meta.env.DEV;
+        const isViteProxy = isDevelopment && window.location.port === '3030';
+        
+        if (isViteProxy) {
+            return endpoint; // El proxy de Vite se encarga del routing
+        }
+        
+        // Si no, construir URL completa
+        return `${API_BASE_URL}${endpoint}`;
     };
 
     const uploadDocument = useCallback(async (file, documentType, clientId) => {
@@ -24,13 +32,21 @@ export const useOCR = () => {
             formData.append('documentType', documentType);
             formData.append('clientId', clientId);
 
-            // CORRECCIÓN: Usar URL absoluta
-            const response = await fetch(getFullUrl('/api/ocr/upload'), {
+            const apiUrl = getApiUrl('/api/ocr/upload');
+            console.log('[useOCR] Upload URL:', apiUrl);
+            console.log('[useOCR] File:', { name: file.name, size: file.size, type: file.type });
+
+            // Usar ruta relativa para que el proxy funcione
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 body: formData
             });
 
+            console.log('[useOCR] Response:', { status: response.status, ok: response.ok });
+
             if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[useOCR] Error response:', errorText);
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
@@ -57,8 +73,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            // CORRECCIÓN: Usar URL absoluta
-            const response = await fetch(getFullUrl('/api/ocr/extract-invoice'), {
+            // Usar ruta relativa para que el proxy funcione
+            const response = await fetch(getApiUrl('/api/ocr/extract-invoice'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -85,8 +101,8 @@ export const useOCR = () => {
         setError(null);
 
         try {
-            // CORRECCIÓN: Usar URL absoluta
-            const response = await fetch(getFullUrl('/api/ocr/extract-bank-statement'), {
+            // Usar ruta relativa para que el proxy funcione
+            const response = await fetch(getApiUrl('/api/ocr/extract-bank-statement'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -114,7 +130,7 @@ export const useOCR = () => {
 
         try {
             // CORRECCIÓN: Usar URL absoluta
-            const response = await fetch(getFullUrl(`/api/ocr/history/${clientId}?page=${page}&limit=${limit}`));
+            const response = await fetch(getApiUrl(`/api/ocr/history/${clientId}?page=${page}&limit=${limit}`));
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -136,7 +152,7 @@ export const useOCR = () => {
 
         try {
             // CORRECCIÓN: Usar URL absoluta
-            const response = await fetch(getFullUrl(`/api/ocr/stats/${clientId}`));
+            const response = await fetch(getApiUrl(`/api/ocr/stats/${clientId}`));
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -190,11 +206,193 @@ export const useOCR = () => {
         }
     }, []);
 
+    // ML Enhancement Functions
+    const submitMLCorrection = useCallback(async (documentId, corrections, originalData) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl('/api/ocr/ml/learn'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    documentId,
+                    corrections,
+                    originalData,
+                    timestamp: new Date().toISOString()
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Error submitting ML correction');
+            }
+
+            // Show user feedback notification
+            if (typeof window !== 'undefined' && window.showNotification) {
+                window.showNotification('Sistema actualizado con tu corrección', 'success');
+            } else {
+                console.log('Sistema actualizado con tu corrección');
+            }
+
+            return result;
+        } catch (err) {
+            setError(err.message);
+            console.error('Error submitting ML correction:', err);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const getConfidenceMetrics = useCallback(async (cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl(`/api/ocr/ml/confidence/${cuit}`));
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (err) {
+            setError(err.message);
+            console.error('Error fetching confidence metrics:', err);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const getProviderTemplate = useCallback(async (cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl(`/api/ocr/ml/patterns/${cuit}`));
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (err) {
+            setError(err.message);
+            console.error('Error fetching provider template:', err);
+            return null;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const processDocumentWithML = useCallback(async (filePath, documentType, cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl('/api/ocr/ml/process'), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filePath,
+                    documentType,
+                    cuit
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Error processing document with ML');
+            }
+
+            return result;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const getMLStats = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl('/api/ocr/ml/stats'));
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            return result;
+        } catch (err) {
+            setError(err.message);
+            console.error('Error fetching ML stats:', err);
+            return {
+                overview: { totalProviders: 0, totalPatterns: 0, averageSuccessRate: 0 },
+                corrections: { totalCorrections: 0, documentsCorrected: 0 },
+                byDocumentType: [],
+                systemHealth: { status: 'unknown', initialized: false }
+            };
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    const deleteProviderPatterns = useCallback(async (cuit) => {
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch(getApiUrl(`/api/ocr/ml/patterns/${cuit}`), {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            
+            if (!result.success) {
+                throw new Error(result.error || 'Error deleting provider patterns');
+            }
+
+            return result;
+        } catch (err) {
+            setError(err.message);
+            throw err;
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         loadRecentExtractions();
     }, [loadRecentExtractions]);
 
     return {
+        // Original OCR functions
         processingQueue,
         recentExtractions,
         uploadDocument,
@@ -203,6 +401,14 @@ export const useOCR = () => {
         getOCRHistory,
         getOCRStats,
         loading,
-        error
+        error,
+        
+        // ML Enhancement functions
+        submitMLCorrection,
+        getConfidenceMetrics,
+        getProviderTemplate,
+        processDocumentWithML,
+        getMLStats,
+        deleteProviderPatterns
     };
 };

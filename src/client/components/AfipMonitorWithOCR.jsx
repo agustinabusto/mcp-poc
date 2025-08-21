@@ -56,10 +56,12 @@ import { Header } from './common/Header.jsx';
 
 // Nuevos componentes OCR
 import OCRProcessingPanel from './ocr/OCRProcessingPanel.jsx';
+import DocumentHistory from './ocr/DocumentHistory.jsx';
 import BankReconciliationPanel from './ocr/BankReconciliationPanel.jsx';
 import TransactionCategorizationPanel from './ocr/TransactionCategorizationPanel.jsx';
 import OCRMetricsPanel from './ocr/OCRMetricsPanel.jsx';
 import DocumentUploadModal from './ocr/DocumentUploadModal.jsx';
+import InvoiceIntake from './invoices/InvoiceIntake.jsx';
 
 const VIEWS = {
     DASHBOARD: "dashboard",
@@ -70,9 +72,12 @@ const VIEWS = {
     GROQ_CHAT: "groq_chat",
     // Nuevas vistas OCR
     OCR_PROCESSING: "ocr_processing",
+    OCR_HISTORY: "ocr_history",
     BANK_RECONCILIATION: "bank_reconciliation",
     TRANSACTION_CATEGORIZATION: "transaction_categorization",
-    OCR_METRICS: "ocr_metrics"
+    OCR_METRICS: "ocr_metrics",
+    // Vistas de facturas
+    INVOICE_INTAKE: "invoice_intake"
 };
 
 const AfipMonitorWithOCR = () => {
@@ -559,6 +564,10 @@ const AfipMonitorWithOCR = () => {
                         onOpenUploadModal={handleOpenUploadModal}  // ✅ PASAR FUNCIÓN
                     />
                 );
+            case VIEWS.OCR_HISTORY:
+                return <DocumentHistory />;
+            case VIEWS.INVOICE_INTAKE:
+                return <InvoiceIntake />;
             default:
                 return renderDashboardContent();
         }

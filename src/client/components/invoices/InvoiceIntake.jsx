@@ -1,12 +1,14 @@
 // 1. src/client/components/invoices/InvoiceIntake.jsx
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, Camera, AlertCircle, CheckCircle, X } from 'lucide-react';
+import { useOCR } from '../../hooks/useOCR';
 
 const InvoiceIntake = () => {
     const [dragOver, setDragOver] = useState(false);
     const [uploadedFiles, setUploadedFiles] = useState([]);
     const [processing, setProcessing] = useState(false);
     const fileInputRef = useRef(null);
+    const { uploadDocument, loading, error } = useOCR();
 
     const handleDrop = (e) => {
         e.preventDefault();
@@ -42,13 +44,43 @@ const InvoiceIntake = () => {
 
     const processFiles = async () => {
         setProcessing(true);
-        // Simular procesamiento
-        for (let i = 0; i < uploadedFiles.length; i++) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            setUploadedFiles(prev => prev.map(file =>
-                file.status === 'pending' ? { ...file, status: 'processed' } : file
-            ));
+        
+        for (const fileData of uploadedFiles.filter(f => f.status === 'pending')) {
+            try {
+                // Marcar como procesando
+                setUploadedFiles(prev => prev.map(f => 
+                    f.id === fileData.id ? { ...f, status: 'processing' } : f
+                ));
+
+                // Llamar al OCR real
+                const result = await uploadDocument(
+                    fileData.file, 
+                    'invoice', 
+                    'default-client' // TODO: obtener clientId del contexto de usuario
+                );
+
+                // Marcar como completado con resultados
+                setUploadedFiles(prev => prev.map(f => 
+                    f.id === fileData.id ? { 
+                        ...f, 
+                        status: 'processed',
+                        ocrResult: result
+                    } : f
+                ));
+
+            } catch (err) {
+                console.error('Error processing file:', err);
+                // Marcar como error
+                setUploadedFiles(prev => prev.map(f => 
+                    f.id === fileData.id ? { 
+                        ...f, 
+                        status: 'error',
+                        error: err.message
+                    } : f
+                ));
+            }
         }
+        
         setProcessing(false);
     };
 
@@ -57,6 +89,11 @@ const InvoiceIntake = () => {
             <div className="mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">Ingreso de Facturas</h2>
                 <p className="text-gray-600">Sube facturas para procesamiento automático con OCR</p>
+                {error && (
+                    <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-red-700 text-sm">{error}</p>
+                    </div>
+                )}
             </div>
 
             {/* Zona de drag & drop */}
@@ -99,10 +136,10 @@ const InvoiceIntake = () => {
                         {uploadedFiles.some(f => f.status === 'pending') && (
                             <button
                                 onClick={processFiles}
-                                disabled={processing}
+                                disabled={processing || loading}
                                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
                             >
-                                {processing ? 'Procesando...' : 'Procesar Todos'}
+                                {processing || loading ? 'Procesando...' : 'Procesar Todos'}
                             </button>
                         )}
                     </div>
@@ -112,19 +149,33 @@ const InvoiceIntake = () => {
                             <div key={file.id} className="flex items-center justify-between p-4 bg-white border rounded-lg">
                                 <div className="flex items-center space-x-3">
                                     <FileText className="h-8 w-8 text-blue-500" />
-                                    <div>
+                                    <div className="flex-1">
                                         <p className="font-medium">{file.name}</p>
                                         <p className="text-sm text-gray-500">
                                             {(file.size / 1024 / 1024).toFixed(2)} MB
                                         </p>
+                                        {file.error && (
+                                            <p className="text-sm text-red-500 mt-1">{file.error}</p>
+                                        )}
+                                        {file.ocrResult && (
+                                            <p className="text-sm text-green-600 mt-1">
+                                                Procesado con éxito - Confianza: {file.ocrResult.confidence || 'N/A'}%
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="flex items-center space-x-3">
                                     {file.status === 'pending' && (
                                         <span className="text-yellow-600 text-sm">Pendiente</span>
                                     )}
+                                    {file.status === 'processing' && (
+                                        <span className="text-blue-600 text-sm animate-pulse">Procesando...</span>
+                                    )}
                                     {file.status === 'processed' && (
                                         <CheckCircle className="h-5 w-5 text-green-500" />
+                                    )}
+                                    {file.status === 'error' && (
+                                        <AlertCircle className="h-5 w-5 text-red-500" />
                                     )}
                                     <button
                                         onClick={() => removeFile(file.id)}

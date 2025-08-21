@@ -7,6 +7,11 @@ const APP_VERSION = self.__APP_VERSION__ || '1.0.0';
 const CACHE_NAME = `afip-monitor-${APP_VERSION}`;
 const STATIC_CACHE_NAME = `afip-monitor-static-${APP_VERSION}`;
 
+// Detectar entorno de desarrollo
+const isDevelopment = self.location.hostname === 'localhost' || 
+                     self.location.hostname === '127.0.0.1' ||
+                     self.location.port === '3030';
+
 // Configuración inteligente de TTL por tipo de contenido
 const CACHE_STRATEGIES = {
     // Datos críticos: siempre fresh
@@ -208,6 +213,12 @@ self.addEventListener('activate', (event) => {
 
 // Event listener mejorado para fetch con estrategias inteligentes
 self.addEventListener('fetch', (event) => {
+    // En desarrollo, no interceptar requests de API para evitar problemas
+    if (isDevelopment && event.request.url.includes('/api/')) {
+        console.log('[SW Dev] Skipping API request:', event.request.url);
+        return; // Dejar que el navegador maneje la request normalmente
+    }
+    
     const url = new URL(event.request.url);
     const strategy = getStrategyForUrl(url.pathname);
     

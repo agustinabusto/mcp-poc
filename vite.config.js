@@ -24,36 +24,21 @@ export default defineConfig({
   // Configuración del servidor de desarrollo
   server: {
     host: '0.0.0.0',
-    port: 3030,  // Actualizado al puerto 3030
-    strictPort: true,
+    port: 3030,  // Puerto fijo 3030
+    strictPort: true,  // Usar puerto estricto
 
     // Proxy para API calls al servidor backend
     proxy: {
-      '/api': {
-        target: 'http://localhost:8080',
-        changeOrigin: true,
-        secure: false,
-        ws: true,
-        rewrite: (path) => path,
-        configure: (proxy, options) => {
-          proxy.on('proxyReq', (proxyReq, req, res) => {
-            console.log(`[Proxy] ${req.method} ${req.url} -> ${options.target}${req.url}`);
-          });
-          
-          proxy.on('proxyRes', (proxyRes, req, res) => {
-            console.log(`[Proxy Response] ${req.method} ${req.url} -> ${proxyRes.statusCode}`);
-          });
-          
-          proxy.on('error', (err, req, res) => {
-            console.error('[Proxy Error]', err);
-          });
-        }
-      }
+      '/api': 'http://localhost:8080'
     },
+
+    // Deshabilitar historyApiFallback para que no interfiera con el proxy
+    open: false,
+    middlewareMode: false,
 
     // CORS configuration
     cors: {
-      origin: ['http://localhost:3030', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:3030'],
+      origin: ['http://localhost:3030', 'http://localhost:3031', 'http://localhost:3001', 'http://localhost:8080', 'http://127.0.0.1:3030', 'http://127.0.0.1:3031'],
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH']
     },

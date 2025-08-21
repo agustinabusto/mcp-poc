@@ -3,7 +3,7 @@
  * Implementa reglas de negocio según documentación oficial
  */
 
-import { Logger } from '../../../../utils/logger.js';
+import { Logger } from '../../../utils/logger.js';
 
 const logger = new Logger('ValidationService');
 

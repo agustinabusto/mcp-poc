@@ -42,11 +42,29 @@ const ocrLogger = (req, res, next) => {
 router.use(ocrLogger);
 
 // ==============================================
+// ENDPOINT: Test de conectividad OCR
+// ==============================================
+router.get('/test', (req, res) => {
+    console.log(`🧪 [OCR Test] Request from ${req.ip} - ${req.headers['user-agent']}`);
+    res.json({
+        success: true,
+        message: 'OCR service is working',
+        timestamp: new Date().toISOString(),
+        server: 'healthy'
+    });
+});
+
+// ==============================================
 // ENDPOINT: Upload y procesamiento de documentos
 // ==============================================
 router.post('/upload', upload.single('document'), async (req, res) => {
+    console.log(`📤 [OCR Upload] Request received from ${req.ip} - ${req.headers['user-agent']}`);
+    console.log(`📤 [OCR Upload] Content-Type: ${req.headers['content-type']}`);
+    console.log(`📤 [OCR Upload] File received:`, req.file ? `${req.file.originalname} (${req.file.size} bytes)` : 'No file');
+    
     try {
         if (!req.file) {
+            console.log(`❌ [OCR Upload] No file in request`);
             return res.status(400).json({
                 success: false,
                 error: 'No file uploaded',
@@ -69,6 +87,39 @@ router.post('/upload', upload.single('document'), async (req, res) => {
 
         // Simular procesamiento OCR con datos realistas
         const mockResult = await simulateOCRProcessing(req.file, documentType, clientId, processId);
+
+        // Guardar en base de datos si está disponible
+        try {
+            const db = req.app.locals.database;
+            if (db && db.isInitialized) {
+                const connection = await db.getConnection();
+                
+                // Insertar en log de procesamiento
+                await connection.run(`
+                    INSERT INTO ocr_processing_log 
+                    (process_id, file_path, document_type, client_id, status, result) 
+                    VALUES (?, ?, ?, ?, 'completed', ?)
+                `, [processId, req.file.path, documentType, clientId, JSON.stringify(mockResult)]);
+
+                // Insertar en resultados de extracción
+                await connection.run(`
+                    INSERT INTO ocr_extraction_results 
+                    (id, process_id, client_id, document_type, raw_text, structured_data, confidence, metadata) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                `, [
+                    processId + '-result',
+                    processId,
+                    clientId,
+                    mockResult.documentType,
+                    mockResult.text,
+                    JSON.stringify(mockResult.structured),
+                    mockResult.confidence,
+                    JSON.stringify(mockResult.metadata)
+                ]);
+            }
+        } catch (dbError) {
+            console.warn('No se pudo guardar en BD:', dbError.message);
+        }
 
         console.log(`📄 OCR Upload procesado: ${req.file.originalname} (${(req.file.size / 1024).toFixed(2)} KB)`);
         console.log(`🔍 Tipo detectado: ${mockResult.structured.type} | Confianza: ${mockResult.confidence}%`);
@@ -164,10 +215,99 @@ router.get('/history/:clientId', async (req, res) => {
         const pageNum = Math.max(1, parseInt(page));
         const limitNum = Math.min(100, Math.max(1, parseInt(limit)));
 
-        // Simular historial con filtros
+        try {
+            // Intentar obtener datos reales de la base de datos
+            const db = req.app.locals.database;
+            if (db && db.isInitialized) {
+                const connection = await db.getConnection();
+                const offset = (pageNum - 1) * limitNum;
+
+                // Construir filtros WHERE
+                let whereConditions = ['opl.client_id = ?'];
+                let params = [clientId];
+
+                if (documentType && documentType !== 'all') {
+                    whereConditions.push('opl.document_type = ?');
+                    params.push(documentType);
+                }
+
+                if (status && status !== 'all') {
+                    whereConditions.push('opl.status = ?');
+                    params.push(status);
+                }
+
+                const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+                // Obtener total de documentos
+                const countQuery = `
+                    SELECT COUNT(*) as total
+                    FROM ocr_processing_log opl
+                    ${whereClause}
+                `;
+                const countResult = await connection.get(countQuery, params);
+                const totalItems = countResult.total;
+                const totalPages = Math.ceil(totalItems / limitNum);
+
+                // Obtener documentos paginados
+                const documentsQuery = `
+                    SELECT 
+                        opl.id,
+                        opl.process_id,
+                        CASE 
+                            WHEN opl.file_path LIKE '%/%' THEN substr(opl.file_path, instr(opl.file_path, '/') + 1)
+                            ELSE 'documento_' || opl.id || '.pdf'
+                        END as fileName,
+                        opl.document_type as documentType,
+                        oer.confidence,
+                        opl.status,
+                        opl.created_at as processedAt,
+                        1024 as fileSize,
+                        oer.structured_data,
+                        oer.raw_text
+                    FROM ocr_processing_log opl
+                    LEFT JOIN ocr_extraction_results oer ON opl.process_id = oer.process_id
+                    ${whereClause}
+                    ORDER BY opl.created_at DESC
+                    LIMIT ? OFFSET ?
+                `;
+
+                const documents = await connection.all(documentsQuery, [...params, limitNum, offset]);
+                
+                // Parsear datos estructurados
+                const processedDocuments = documents.map(doc => ({
+                    ...doc,
+                    extractedData: doc.structured_data ? JSON.parse(doc.structured_data) : null,
+                    confidence: doc.confidence || Math.round(Math.random() * 15 + 80) // Fallback si no hay confianza
+                }));
+
+                const realHistory = {
+                    success: true,
+                    data: {
+                        totalItems,
+                        currentPage: pageNum,
+                        totalPages,
+                        itemsPerPage: limitNum,
+                        items: processedDocuments
+                    },
+                    filters: {
+                        clientId,
+                        documentType: documentType || 'all',
+                        status: status || 'all'
+                    }
+                };
+
+                console.log(`📋 Historial OCR Real: Cliente ${clientId}, ${totalItems} documentos, Página ${pageNum}/${totalPages}`);
+                res.json(realHistory);
+                return;
+            }
+        } catch (dbError) {
+            console.warn('❌ Error accediendo a BD, usando datos simulados:', dbError.message);
+        }
+
+        // Fallback: Simular historial con filtros
         const mockHistory = await generateMockHistory(clientId, pageNum, limitNum, documentType, status);
 
-        console.log(`📋 Historial OCR: Cliente ${clientId}, Página ${pageNum}/${mockHistory.data.totalPages}`);
+        console.log(`📋 Historial OCR Mock: Cliente ${clientId}, Página ${pageNum}/${mockHistory.data.totalPages}`);
         res.json(mockHistory);
 
     } catch (error) {

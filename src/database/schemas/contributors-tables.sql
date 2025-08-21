@@ -3,45 +3,56 @@
 -- Compatible con el esquema existente de AFIP Monitor
 -- ==============================================
 
--- Tabla principal de contribuyentes/clientes
+-- Crear tabla principal de contribuyentes (solo si no existe)
 CREATE TABLE IF NOT EXISTS contributors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     cuit TEXT UNIQUE NOT NULL,
     business_name TEXT NOT NULL,
-    email TEXT,
-    phone TEXT,
-    address TEXT,
-    category TEXT CHECK(category IN ('Comercio', 'Servicios', 'Industria', 'Construcción', 'Agropecuario', 'Otro', NULL)),
-    notes TEXT,
-    
-    -- Estados ARCA
-    arca_status TEXT DEFAULT 'unknown' CHECK(arca_status IN ('green', 'yellow', 'red', 'unknown')),
-    iva_status TEXT,
-    monotributo_status TEXT,
-    ganancias_status TEXT,
-    social_security_status TEXT,
-    
-    -- Compliance general
-    compliance_status TEXT DEFAULT 'pending' CHECK(compliance_status IN ('compliant', 'partial', 'non_compliant', 'pending')),
-    compliance_details TEXT, -- JSON con detalles de compliance
-    compliance_score REAL DEFAULT 0.0,
-    
-    -- Control de versiones y timestamps
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_arca_check DATETIME,
-    last_iva_check DATETIME,
-    last_monotributo_check DATETIME,
-    last_ganancias_check DATETIME,
-    last_social_security_check DATETIME,
-    
-    -- Metadatos
-    import_source TEXT, -- 'manual', 'csv', 'excel'
-    import_batch_id TEXT,
-    
-    -- Soft delete
-    deleted_at DATETIME NULL
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Agregar columnas solo si no existen (manejo de errores silencioso)
+-- SQLite ADD COLUMN es seguro si la columna ya existe
+
+-- Campos de contacto
+ALTER TABLE contributors ADD COLUMN contact_email TEXT;
+ALTER TABLE contributors ADD COLUMN contact_phone TEXT;
+ALTER TABLE contributors ADD COLUMN email TEXT;
+ALTER TABLE contributors ADD COLUMN phone TEXT;
+ALTER TABLE contributors ADD COLUMN address TEXT;
+ALTER TABLE contributors ADD COLUMN category TEXT;
+ALTER TABLE contributors ADD COLUMN notes TEXT;
+
+-- Estados y control
+ALTER TABLE contributors ADD COLUMN status TEXT DEFAULT 'active';
+ALTER TABLE contributors ADD COLUMN risk_level TEXT DEFAULT 'medium';
+ALTER TABLE contributors ADD COLUMN active INTEGER DEFAULT 1;
+ALTER TABLE contributors ADD COLUMN compliance_status TEXT DEFAULT 'unknown';
+ALTER TABLE contributors ADD COLUMN last_compliance_check DATETIME;
+ALTER TABLE contributors ADD COLUMN deleted_at DATETIME;
+
+-- Estados ARCA (nuevas columnas v4.1)
+ALTER TABLE contributors ADD COLUMN arca_status TEXT DEFAULT 'unknown';
+ALTER TABLE contributors ADD COLUMN iva_status TEXT;
+ALTER TABLE contributors ADD COLUMN monotributo_status TEXT;
+ALTER TABLE contributors ADD COLUMN ganancias_status TEXT;
+ALTER TABLE contributors ADD COLUMN social_security_status TEXT;
+
+-- Compliance avanzado (nuevas columnas v4.1)
+ALTER TABLE contributors ADD COLUMN compliance_details TEXT;
+ALTER TABLE contributors ADD COLUMN compliance_score REAL DEFAULT 0.0;
+
+-- Timestamps de verificación (nuevos v4.1)
+ALTER TABLE contributors ADD COLUMN last_arca_check DATETIME;
+ALTER TABLE contributors ADD COLUMN last_iva_check DATETIME;
+ALTER TABLE contributors ADD COLUMN last_monotributo_check DATETIME;
+ALTER TABLE contributors ADD COLUMN last_ganancias_check DATETIME;
+ALTER TABLE contributors ADD COLUMN last_social_security_check DATETIME;
+
+-- Metadatos de importación (nuevos v4.1)
+ALTER TABLE contributors ADD COLUMN import_source TEXT;
+ALTER TABLE contributors ADD COLUMN import_batch_id TEXT;
 
 -- Índices principales para contributors
 CREATE INDEX IF NOT EXISTS idx_contributors_cuit ON contributors(cuit);
