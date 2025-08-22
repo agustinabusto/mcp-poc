@@ -955,4 +955,85 @@ async function performRealOCR(file, documentType, clientId, processId, req = nul
     }
 }
 
+// ==============================================
+// ENDPOINT: Servir archivo original del documento
+// ==============================================
+router.get('/document/:documentId/file', async (req, res) => {
+    try {
+        const { documentId } = req.params;
+        const db = req.app.locals.database;
+
+        if (!db || !db.isInitialized) {
+            return res.status(503).json({
+                success: false,
+                error: 'Database not available'
+            });
+        }
+
+        const connection = await db.getConnection();
+        
+        // Obtener información del documento desde la base de datos
+        const documentQuery = `
+            SELECT opl.file_path, opl.result 
+            FROM ocr_processing_log opl 
+            WHERE opl.id = ?
+        `;
+        
+        const document = await connection.get(documentQuery, [documentId]);
+
+        if (!document) {
+            return res.status(404).json({
+                success: false,
+                error: 'Document not found'
+            });
+        }
+
+        // Extraer información del archivo desde el JSON result
+        let original_filename = 'document.pdf';
+        let mime_type = 'application/pdf';
+        
+        if (document.result) {
+            try {
+                const resultData = JSON.parse(document.result);
+                original_filename = resultData.fileName || resultData.metadata?.originalName || 'document.pdf';
+                mime_type = resultData.metadata?.mimeType || 'application/pdf';
+            } catch (parseError) {
+                console.warn('Error parsing result JSON:', parseError);
+            }
+        }
+
+        const { file_path } = document;
+
+        // Verificar que el archivo existe
+        try {
+            await fs.access(file_path);
+        } catch (accessError) {
+            console.error(`📄 [File Serve] File not found: ${file_path}`);
+            return res.status(404).json({
+                success: false,
+                error: 'File not found on disk'
+            });
+        }
+
+        console.log(`📄 [File Serve] Serving file: ${original_filename} (${file_path})`);
+
+        // Configurar headers apropiados
+        res.setHeader('Content-Type', mime_type || 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${original_filename}"`);
+        res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache por 1 hora
+
+        // Leer y enviar el archivo
+        const fileBuffer = await fs.readFile(file_path);
+        res.send(fileBuffer);
+
+    } catch (error) {
+        console.error('❌ [File Serve] Error serving document file:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+            message: error.message
+        });
+    }
+});
+
 export default router;

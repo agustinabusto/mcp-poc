@@ -57,12 +57,43 @@ const DocumentDetailViewer = ({ document, onBack }) => {
                 {/* Vista previa del archivo */}
                 <div className="bg-white p-6 rounded-lg border">
                     <h3 className="text-lg font-medium text-gray-900 mb-4">Archivo Original</h3>
-                    {adaptedDocument.previewUrl ? (
-                        <img
-                            src={adaptedDocument.previewUrl}
-                            alt="Vista previa"
-                            className="w-full h-auto rounded border shadow-sm"
-                        />
+                    {adaptedDocument.id ? (
+                        <div className="space-y-4">
+                            {/* Información del archivo */}
+                            <div className="flex items-center justify-between text-sm text-gray-600 bg-gray-50 p-3 rounded">
+                                <span>{adaptedDocument.fileName}</span>
+                                <span>{(adaptedDocument.fileSize / 1024).toFixed(1)} KB</span>
+                            </div>
+                            
+                            {/* Visor de PDF integrado */}
+                            <div className="border rounded-lg overflow-hidden" style={{ height: '500px' }}>
+                                <iframe
+                                    src={`/api/ocr/document/${adaptedDocument.id}/file`}
+                                    className="w-full h-full"
+                                    title="Vista previa del documento"
+                                    style={{ border: 'none' }}
+                                />
+                            </div>
+                            
+                            {/* Botones de acción */}
+                            <div className="flex space-x-2">
+                                <a
+                                    href={`/api/ocr/document/${adaptedDocument.id}/file`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg text-center hover:bg-blue-700 transition-colors"
+                                >
+                                    Abrir en nueva pestaña
+                                </a>
+                                <a
+                                    href={`/api/ocr/document/${adaptedDocument.id}/file`}
+                                    download={adaptedDocument.fileName}
+                                    className="flex-1 bg-gray-600 text-white px-4 py-2 rounded-lg text-center hover:bg-gray-700 transition-colors"
+                                >
+                                    Descargar
+                                </a>
+                            </div>
+                        </div>
                     ) : (
                         <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
                             <FileText className="w-16 h-16 text-gray-400 mx-auto mb-4" />
