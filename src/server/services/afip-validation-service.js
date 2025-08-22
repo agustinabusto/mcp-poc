@@ -345,7 +345,7 @@ export class AfipValidationService extends EventEmitter {
             const existingInvoices = await this.db.all(`
                 SELECT o.id, o.file_path, o.created_at
                 FROM ocr_processing_log o
-                JOIN ocr_extraction_results r ON o.id = r.document_id
+                JOIN ocr_extraction_results r ON o.process_id = r.process_id
                 WHERE JSON_EXTRACT(r.structured_data, '$.numeroFactura') = ?
                   AND JSON_EXTRACT(r.structured_data, '$.emisor.cuit') = ?
                   AND DATE(JSON_EXTRACT(r.structured_data, '$.fecha')) = DATE(?)
@@ -755,7 +755,7 @@ export class AfipValidationService extends EventEmitter {
                         VALUES (?, ?, ?, ?, ?, ?)
                     `, [
                         documentId,
-                        type.replace('Validation', '').replace('Check', ''),
+                        this.getValidationType(type),
                         JSON.stringify(results[type]),
                         results[type].valid ? 1 : 0,
                         results[type].severity || 'info',
@@ -817,6 +817,20 @@ export class AfipValidationService extends EventEmitter {
             this.logger.error('Error getting connectivity status:', error);
             return { services: [], overall: 'unknown' };
         }
+    }
+
+    /**
+     * Get database validation type from internal type name
+     */
+    getValidationType(internalType) {
+        const typeMap = {
+            'cuitValidation': 'cuit',
+            'caeValidation': 'cae',
+            'duplicateCheck': 'duplicate',
+            'taxConsistency': 'tax_consistency'
+        };
+        
+        return typeMap[internalType] || internalType;
     }
 
     async cleanup() {

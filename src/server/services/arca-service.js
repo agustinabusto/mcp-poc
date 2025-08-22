@@ -165,7 +165,7 @@ export class ARCAService {
      */
     async authenticateWSAA(service = 'wsfe') {
         const cacheKey = `wsaa_token_${service}`;
-        const cachedToken = this.cacheService.get(cacheKey);
+        const cachedToken = await this.cacheService.get(cacheKey);
 
         if (cachedToken && !this.isTokenExpired(cachedToken)) {
             logger.debug('Using cached WSAA token', { service });
@@ -196,7 +196,7 @@ export class ARCAService {
             const cacheExpiryTime = new Date(expiryTime.getTime() - (bufferHours * 60 * 60 * 1000));
             const ttl = Math.max(0, Math.floor((cacheExpiryTime.getTime() - Date.now()) / 1000));
 
-            this.cacheService.set(cacheKey, token, ttl);
+            await this.cacheService.set(cacheKey, token, ttl);
 
             logger.info('WSAA token obtained successfully', {
                 service,
@@ -572,7 +572,7 @@ export class ARCAService {
         const token = await this.authenticateWSAA('wsfe');
 
         const cacheKey = `fe_param_${method}_${JSON.stringify(params)}`;
-        const cached = this.cacheService.get(cacheKey);
+        const cached = await this.cacheService.get(cacheKey);
 
         if (cached) {
             logger.debug('Using cached parameter data', { method });
@@ -587,7 +587,7 @@ export class ARCAService {
 
             // Cache parameters for configured time
             const ttl = this.config.CACHE_TTL_SECONDS || 3600;
-            this.cacheService.set(cacheKey, result, ttl);
+            await this.cacheService.set(cacheKey, result, ttl);
 
             return result;
         } catch (error) {
@@ -787,7 +787,7 @@ export class ARCAService {
     async checkAuthStatus() {
         try {
             const cacheKey = 'wsaa_token_wsfe';
-            const cachedToken = this.cacheService.get(cacheKey);
+            const cachedToken = await this.cacheService.get(cacheKey);
 
             if (!cachedToken) {
                 return { valid: false, reason: 'No token cached' };
@@ -830,7 +830,7 @@ export class ARCAService {
 
             // Check cache first
             const cacheKey = `cuit_validation_${normalizedCuit}`;
-            const cached = this.cacheService.get(cacheKey);
+            const cached = await this.cacheService.get(cacheKey);
             if (cached) {
                 logger.debug('CUIT validation cache hit', { cuit: normalizedCuit });
                 return { ...cached, fromCache: true, responseTime: Date.now() - startTime };
@@ -854,7 +854,7 @@ export class ARCAService {
             };
 
             // Cache result for 24 hours
-            this.cacheService.set(cacheKey, validationResult, 24 * 60 * 60);
+            await this.cacheService.set(cacheKey, validationResult, 24 * 60 * 60);
 
             logger.info('CUIT validation completed', { 
                 cuit: normalizedCuit, 
@@ -897,7 +897,7 @@ export class ARCAService {
 
             // Check cache first
             const cacheKey = `cae_validation_${cae}_${invoiceData.cuit}`;
-            const cached = this.cacheService.get(cacheKey);
+            const cached = await this.cacheService.get(cacheKey);
             if (cached) {
                 logger.debug('CAE validation cache hit', { cae });
                 return { ...cached, fromCache: true, responseTime: Date.now() - startTime };
@@ -949,7 +949,7 @@ export class ARCAService {
             }
 
             // Cache result for 1 hour
-            this.cacheService.set(cacheKey, validationResult, 60 * 60);
+            await this.cacheService.set(cacheKey, validationResult, 60 * 60);
 
             logger.info('CAE validation completed', { 
                 cae, 

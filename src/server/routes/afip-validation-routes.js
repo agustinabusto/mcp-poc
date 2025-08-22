@@ -13,70 +13,33 @@ import { Logger } from '../../../utils/logger.js';
 const router = express.Router();
 const logger = new Logger('AfipValidationRoutes');
 
-// Initialize services
-let afipService;
-let arcaService;
-let db;
-
-// Initialize services and database connection
-async function initializeServices() {
+// Helper function to get AFIP service from app.locals
+function getAfipService(req) {
+    const afipService = req.app.locals.afipValidationService;
     if (!afipService) {
-        try {
-            // Initialize database connection
-            db = await open({
-                filename: process.env.DATABASE_PATH || './data/afip_monitor.db',
-                driver: sqlite3.Database
-            });
-
-            // Initialize ARCA service (simplified cache service for demo)
-            const cacheService = {
-                cache: new Map(),
-                get(key) {
-                    const item = this.cache.get(key);
-                    if (item && item.expiry > Date.now()) {
-                        return item.value;
-                    }
-                    this.cache.delete(key);
-                    return null;
-                },
-                set(key, value, ttlSeconds) {
-                    this.cache.set(key, {
-                        value,
-                        expiry: Date.now() + (ttlSeconds * 1000)
-                    });
-                }
-            };
-
-            arcaService = new ARCAService({
-                ARCA_ENVIRONMENT: 'homologacion',
-                ARCA_CUIT: process.env.ARCA_CUIT || '20123456789'
-            }, cacheService);
-
-            // Initialize AFIP validation service
-            afipService = new AfipValidationService({
-                database: { path: process.env.DATABASE_PATH || './data/afip_monitor.db' }
-            }, logger, arcaService);
-
-            await afipService.initialize();
-            
-            logger.info('AFIP validation services initialized');
-        } catch (error) {
-            logger.error('Failed to initialize AFIP validation services:', error);
-            throw error;
-        }
+        throw new Error('AFIP Validation Service not available');
     }
+    return afipService;
 }
 
-// Middleware to ensure services are initialized
+// Middleware to check if services are available
 router.use(async (req, res, next) => {
     try {
-        await initializeServices();
+        const afipService = req.app.locals.afipValidationService;
+        if (!afipService) {
+            return res.status(503).json({
+                success: false,
+                error: 'AFIP Validation Service not available',
+                code: 'SERVICE_NOT_AVAILABLE'
+            });
+        }
         next();
     } catch (error) {
-        logger.error('Service initialization failed:', error);
-        res.status(500).json({ 
-            error: 'Internal server error - services unavailable',
-            details: error.message 
+        logger.error('Service availability check failed:', error);
+        res.status(503).json({
+            success: false,
+            error: 'AFIP Validation Service not available',
+            code: 'SERVICE_NOT_AVAILABLE'
         });
     }
 });
@@ -92,7 +55,7 @@ router.post('/validate/:documentId', async (req, res) => {
         logger.info(`Starting AFIP validation for document ${documentId}`);
 
         // Get document data from OCR results
-        const documentData = await getDocumentData(documentId);
+        const documentData = await getDocumentData(documentId, req);
         if (!documentData) {
             return res.status(404).json({ 
                 error: 'Documento no encontrado',
@@ -101,6 +64,7 @@ router.post('/validate/:documentId', async (req, res) => {
         }
 
         // Execute AFIP validations
+        const afipService = getAfipService(req);
         const validationResults = await afipService.validateDocument(documentData, {
             priority,
             ...options
@@ -147,6 +111,7 @@ router.get('/validate/:documentId', async (req, res) => {
     const { documentId } = req.params;
 
     try {
+        const afipService = getAfipService(req);
         const validationResults = await afipService.getValidationResults(documentId);
         
         if (Object.keys(validationResults).length === 0) {
@@ -179,6 +144,7 @@ router.get('/validate/:documentId', async (req, res) => {
  */
 router.get('/status', async (req, res) => {
     try {
+        const afipService = getAfipService(req);
         const connectivityStatus = await afipService.getConnectivityStatus();
         
         res.json({
@@ -203,6 +169,7 @@ router.get('/status', async (req, res) => {
  */
 router.post('/retry-queue', async (req, res) => {
     try {
+        const afipService = getAfipService(req);
         await afipService.processRetryQueue();
         
         res.json({
@@ -236,6 +203,7 @@ router.post('/validate/cuit', async (req, res) => {
     }
 
     try {
+        const arcaService = req.app.locals.arcaService;
         const validationResult = await arcaService.validateCUIT(cuit);
         
         res.json({
@@ -271,6 +239,7 @@ router.post('/validate/cae', async (req, res) => {
     }
 
     try {
+        const arcaService = req.app.locals.arcaService;
         const validationResult = await arcaService.validateCAE(cae, invoiceData);
         
         res.json({
@@ -299,7 +268,7 @@ router.get('/validations/stats', async (req, res) => {
     const { period = '30days' } = req.query;
 
     try {
-        const stats = await getValidationStats(period);
+        const stats = await getValidationStats(period, req);
         
         res.json({
             success: true,
@@ -325,7 +294,7 @@ router.get('/validations/queue', async (req, res) => {
     const { status = 'all' } = req.query;
 
     try {
-        const queueData = await getRetryQueueStatus(status);
+        const queueData = await getRetryQueueStatus(status, req);
         
         res.json({
             success: true,
@@ -348,8 +317,9 @@ router.get('/validations/queue', async (req, res) => {
 /**
  * Get document data from OCR processing results
  */
-async function getDocumentData(documentId) {
+async function getDocumentData(documentId, req) {
     try {
+        const db = await req.app.locals.database.getConnection();
         const result = await db.get(`
             SELECT p.*, r.structured_data, r.raw_text, r.confidence
             FROM ocr_processing_log p
@@ -396,7 +366,7 @@ async function getDocumentData(documentId) {
 /**
  * Get validation statistics for a given period
  */
-async function getValidationStats(period) {
+async function getValidationStats(period, req) {
     const periodMap = {
         '7days': 7,
         '30days': 30,
@@ -406,6 +376,7 @@ async function getValidationStats(period) {
     const days = periodMap[period] || 30;
 
     try {
+        const db = await req.app.locals.database.getConnection();
         const stats = await db.all(`
             SELECT 
                 validation_type,
@@ -443,13 +414,14 @@ async function getValidationStats(period) {
 /**
  * Get retry queue status
  */
-async function getRetryQueueStatus(statusFilter) {
+async function getRetryQueueStatus(statusFilter, req) {
     try {
         let whereClause = '';
         if (statusFilter !== 'all') {
             whereClause = `WHERE status = '${statusFilter}'`;
         }
 
+        const db = await req.app.locals.database.getConnection();
         const queueItems = await db.all(`
             SELECT 
                 id,

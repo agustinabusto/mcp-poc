@@ -43,12 +43,19 @@ import {
     getProblematicSummary
 } from './services/compliance-problematic-case.js';
 
+// Importar servicio OCR
+import { OCRService } from './services/ocr-service.js';
+
 // Importar rutas existentes
 import groqChatRoutes from './routes/groq-chat.js';
 import ocrRoutes from './routes/ocr-routes.js';
 import authRoutes from './routes/auth-routes.js';
 import ocrMLRoutes from './routes/ocr-ml-routes.js';
 import afipValidationRoutes from './routes/afip-validation-routes.js';
+
+// Importar servicio de validación AFIP
+import { AfipValidationService } from './services/afip-validation-service.js';
+import { ARCAService } from './services/arca-service.js';
 
 // Importar nueva ruta de contributors
 import contributorsRoutes from './routes/contributors.js';
@@ -1057,6 +1064,65 @@ async function startServer() {
         // Inicializar base de datos
         await initializeDatabase();
 
+        // Inicializar servicios ARCA y AFIP DESPUÉS de la base de datos
+        console.log('🔧 Inicializando servicios ARCA y AFIP...');
+        
+        // Inicializar cache service (es estático, no se instancia)
+        // El CacheService usa métodos estáticos
+        
+        const arcaService = new ARCAService(
+            {
+                environment: process.env.AFIP_ENVIRONMENT || 'testing',
+                cuit: process.env.AFIP_CUIT,
+                certificatePath: process.env.AFIP_CERTIFICATE_PATH,
+                privateKeyPath: process.env.AFIP_PRIVATE_KEY_PATH
+            },
+            CacheService  // Pasar la clase, no una instancia
+        );
+        
+        const afipValidationService = new AfipValidationService(
+            {
+                database: {
+                    path: process.env.DATABASE_PATH || 'data/afip_monitor.db'
+                }
+            },
+            {
+                info: (...args) => console.log(...args),
+                error: (...args) => console.error(...args),
+                warn: (...args) => console.warn(...args),
+                debug: (...args) => console.debug(...args)
+            },
+            arcaService
+        );
+        
+        // Inicializar el servicio AFIP
+        await afipValidationService.initialize();
+        console.log('✅ Servicios ARCA y AFIP inicializados');
+
+        // Inicializar servicio OCR
+        console.log('🤖 Inicializando servicio OCR...');
+        const ocrService = new OCRService({
+            openai: {
+                apiKey: process.env.OPENAI_API_KEY
+            },
+            ocr: {
+                maxWorkers: parseInt(process.env.OCR_MAX_WORKERS) || 3
+            }
+        }, {
+            info: (...args) => console.log(...args),
+            error: (...args) => console.error(...args),
+            warn: (...args) => console.warn(...args),
+            debug: (...args) => console.debug(...args)
+        });
+        
+        try {
+            await ocrService.initialize();
+            console.log('✅ Servicio OCR inicializado con Tesseract');
+        } catch (error) {
+            console.warn('⚠️ Error inicializando OCR service:', error.message);
+            console.log('   El sistema funcionará con OCR simulado');
+        }
+
         // Inicializar servicios de compliance DESPUÉS de la base de datos
         console.log('🔧 Inicializando servicios de compliance...');
         const emailService = new EmailService(notificationConfig.email);
@@ -1076,6 +1142,11 @@ async function startServer() {
         app.locals.escalationEngine = escalationEngine;
         app.locals.emailService = emailService;
         app.locals.database = DatabaseService;
+        app.locals.arcaService = arcaService;
+        app.locals.afipValidationService = afipValidationService;
+        app.locals.services = {
+            ocr: ocrService
+        };
         app.locals.config = {
             database: {
                 path: process.env.DATABASE_PATH || 'data/afip_monitor.db'
@@ -1243,6 +1314,9 @@ async function startServer() {
             req.wsServer = wss;
             next();
         });
+
+        // Make WebSocket server available in app.locals for services
+        app.locals.wsServer = wss;
 
         wss.on('connection', (ws, req) => {
             console.log('🔌 Nueva conexión WebSocket');

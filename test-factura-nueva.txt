@@ -1,0 +1,5 @@
+FACTURA TEST
+Empresa Nueva S.A.
+CUIT: 20-12345678-9
+Fecha: 22/08/2025
+Total: ,500.00

@@ -77,7 +77,10 @@ const VIEWS = {
     TRANSACTION_CATEGORIZATION: "transaction_categorization",
     OCR_METRICS: "ocr_metrics",
     // Vistas de facturas
-    INVOICE_INTAKE: "invoice_intake"
+    INVOICE_INTAKE: "invoice_intake",
+    INVOICE_PROCESSING: "invoice_processing", // Vista específica para procesamiento de facturas
+    INVOICE_VALIDATION: "invoice_validation",
+    INVOICE_INTEGRATION: "invoice_integration"
 };
 
 const AfipMonitorWithOCR = () => {
@@ -562,6 +565,12 @@ const AfipMonitorWithOCR = () => {
                 return (
                     <OCRProcessingPanel
                         onOpenUploadModal={handleOpenUploadModal}  // ✅ PASAR FUNCIÓN
+                    />
+                );
+            case VIEWS.INVOICE_PROCESSING:
+                return (
+                    <OCRProcessingPanel
+                        onOpenUploadModal={handleOpenUploadModal}  // ✅ USAR MISMO COMPONENTE DESHARDCODEADO
                     />
                 );
             case VIEWS.OCR_HISTORY:

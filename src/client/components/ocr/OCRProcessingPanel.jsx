@@ -12,6 +12,8 @@ import {
     Upload,
     Plus
 } from 'lucide-react';
+import useOCRProcessing from '../../hooks/useOCRProcessing';
+import DocumentDetailViewer from './DocumentDetailViewer';
 
 const OCRProcessingPanel = ({
     onOpenUploadModal,
@@ -20,68 +22,65 @@ const OCRProcessingPanel = ({
     onSelectDocument,
     onBackToList
 }) => {
-    const [processingQueue, setProcessingQueue] = useState([]);
-    const [recentExtractions, setRecentExtractions] = useState([]);
+    const [selectedDocumentId, setSelectedDocumentId] = useState(selectedDocument?.id || null);
+    const [showDocumentDetail, setShowDocumentDetail] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
+    
+    // Hook personalizado para datos reales
+    const {
+        processingQueue,
+        recentDocuments,
+        loading,
+        error,
+        refreshDocuments,
+        refreshDocument,
+        fetchDocumentWithValidations,
+        isProcessing
+    } = useOCRProcessing('default-client', true);
 
-    // Mock data existente
-    const mockProcessingQueue = [
-        {
-            id: 1,
-            fileName: 'factura-001.pdf',
-            documentType: 'invoice',
-            status: 'processing',
-            progress: 75,
-            uploadedAt: new Date(Date.now() - 30000).toISOString()
-        },
-        {
-            id: 2,
-            fileName: 'extracto-enero.pdf',
-            documentType: 'bank_statement',
-            status: 'queued',
-            progress: 0,
-            uploadedAt: new Date(Date.now() - 120000).toISOString()
+    // Manejar selección de documento para vista detallada
+    const handleDocumentClick = async (document) => {
+        setSelectedDocumentId(document.id);
+        setShowDocumentDetail(true);
+        if (onSelectDocument) {
+            onSelectDocument(document);
         }
-    ];
+    };
 
-    const mockRecentExtractions = [
-        {
-            id: 1,
-            fileName: 'factura-abc-123.pdf',
-            documentType: 'invoice',
-            confidence: 95.8,
-            extractedData: {
-                invoiceNumber: 'A-001-00012345',
-                amount: 1250.50,
-                date: '2024-01-15'
-            },
-            processedAt: new Date(Date.now() - 600000).toISOString()
-        },
-        {
-            id: 2,
-            fileName: 'extracto-diciembre.pdf',
-            documentType: 'bank_statement',
-            confidence: 92.3,
-            extractedData: {
-                transactions: 45,
-                period: '2023-12'
-            },
-            processedAt: new Date(Date.now() - 1200000).toISOString()
+    // Manejar actualización manual
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await refreshDocuments();
+        } catch (err) {
+            console.error('Error refreshing documents:', err);
+        } finally {
+            setRefreshing(false);
         }
-    ];
+    };
 
-    useEffect(() => {
-        setProcessingQueue(mockProcessingQueue);
-        setRecentExtractions(mockRecentExtractions);
-    }, []);
+    // Manejar volver a la lista
+    const handleBackToList = () => {
+        setShowDocumentDetail(false);
+        setSelectedDocumentId(null);
+        if (onBackToList) {
+            onBackToList();
+        }
+    };
 
     // Si hay documento seleccionado, mostrar vista detallada
-    if (selectedDocument) {
-        return (
-            <DocumentDetailViewer
-                document={selectedDocument}
-                onBack={onBackToList}
-            />
-        );
+    if (showDocumentDetail && selectedDocumentId) {
+        const document = [...processingQueue, ...recentDocuments]
+            .find(doc => doc.id === selectedDocumentId);
+            
+        if (document) {
+            return (
+                <DocumentDetailViewer
+                    document={document}
+                    onBack={handleBackToList}
+                />
+            );
+        }
     }
 
     // Funciones existentes
@@ -133,11 +132,12 @@ const OCRProcessingPanel = ({
                     </button>
 
                     <button
-                        onClick={() => window.location.reload()}
-                        className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
                     >
-                        <RefreshCw className="w-4 h-4" />
-                        <span>Actualizar</span>
+                        <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                        <span>{refreshing ? 'Actualizando...' : 'Actualizar'}</span>
                     </button>
                 </div>
             </div>
@@ -156,15 +156,19 @@ const OCRProcessingPanel = ({
                     ) : (
                         <div className="space-y-4">
                             {processingQueue.map((item) => (
-                                <div key={item.id} className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
+                                <div 
+                                    key={item.id} 
+                                    className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer transition-colors"
+                                    onClick={() => handleDocumentClick(item)}
+                                >
                                     {getStatusIcon(item.status)}
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
                                             <p className="text-sm font-medium text-gray-900 truncate">
-                                                {item.fileName}
+                                                {item.fileName || `documento-${item.id}.pdf`}
                                             </p>
                                             <span className="text-xs text-gray-500">
-                                                {formatTimeAgo(item.uploadedAt)}
+                                                {formatTimeAgo(item.processedAt || item.uploadedAt)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-gray-500">
@@ -195,7 +199,12 @@ const OCRProcessingPanel = ({
                     <h3 className="text-lg font-semibold text-gray-900">Extracciones Recientes</h3>
                 </div>
                 <div className="p-6">
-                    {recentExtractions.length === 0 ? (
+                    {loading ? (
+                        <div className="text-center py-8 text-gray-500">
+                            <RefreshCw className="w-12 h-12 mx-auto mb-4 text-gray-300 animate-spin" />
+                            <p>Cargando documentos...</p>
+                        </div>
+                    ) : recentDocuments.length === 0 ? (
                         <div className="text-center py-12">
                             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                             <h4 className="text-lg font-medium text-gray-900 mb-2">
@@ -214,34 +223,41 @@ const OCRProcessingPanel = ({
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {recentExtractions.map((extraction) => (
-                                <div key={extraction.id} className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                            {recentDocuments.map((document) => (
+                                <div 
+                                    key={document.id} 
+                                    className="flex items-center space-x-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+                                    onClick={() => handleDocumentClick(document)}
+                                >
                                     <CheckCircle className="w-5 h-5 text-green-500" />
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center justify-between">
                                             <p className="text-sm font-medium text-gray-900 truncate">
-                                                {extraction.fileName}
+                                                {document.fileName || `documento-${document.id}.pdf`}
                                             </p>
                                             <span className="text-xs text-gray-500">
-                                                {formatTimeAgo(extraction.processedAt)}
+                                                {formatTimeAgo(document.processedAt)}
                                             </span>
                                         </div>
                                         <p className="text-xs text-gray-500">
-                                            {getDocumentTypeLabel(extraction.documentType)} • {extraction.confidence}% confianza
+                                            {getDocumentTypeLabel(document.documentType)} • {document.confidence}% confianza
                                         </p>
                                         <div className="mt-2 text-xs text-gray-600">
-                                            {extraction.documentType === 'invoice' && (
-                                                <p>Factura {extraction.extractedData.invoiceNumber} • ${extraction.extractedData.amount}</p>
+                                            {document.documentType === 'invoice' && document.extractedData?.extractedData && (
+                                                <p>Factura {document.extractedData.extractedData.numero} • ${document.extractedData.extractedData.total}</p>
                                             )}
-                                            {extraction.documentType === 'bank_statement' && (
-                                                <p>{extraction.extractedData.transactions} transacciones • {extraction.extractedData.period}</p>
+                                            {document.documentType === 'bank_statement' && (
+                                                <p>{document.extractedData.transactions} transacciones • {document.extractedData.period}</p>
                                             )}
                                         </div>
                                     </div>
                                     <div className="flex space-x-2">
                                         <button
                                             className="p-2 text-gray-400 hover:text-blue-600"
-                                            onClick={() => onSelectDocument && onSelectDocument(extraction)}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDocumentClick(document);
+                                            }}
                                         >
                                             <Eye className="w-4 h-4" />
                                         </button>
@@ -259,41 +275,5 @@ const OCRProcessingPanel = ({
     );
 };
 
-// Componente para vista detallada de documento (placeholder)
-const DocumentDetailViewer = ({ document, onBack }) => {
-    return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <button
-                    onClick={onBack}
-                    className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-                >
-                    <span>← Volver</span>
-                </button>
-                <h2 className="text-2xl font-bold text-gray-900">Detalle del Documento</h2>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-                <h3 className="text-lg font-semibold mb-4">{document.fileName}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <p className="text-sm text-gray-500">Tipo</p>
-                        <p className="font-medium">{document.documentType}</p>
-                    </div>
-                    <div>CUIT Search Error in Web App
-                        <p className="text-sm text-gray-500">Confianza</p>
-                        <p className="font-medium">{document.confidence}%</p>
-                    </div>
-                </div>
-                <div className="mt-4">
-                    <p className="text-sm text-gray-500">Datos extraídos</p>
-                    <pre className="bg-gray-50 p-4 rounded-lg mt-2 text-sm overflow-auto">
-                        {JSON.stringify(document.extractedData, null, 2)}
-                    </pre>
-                </div>
-            </div>
-        </div>
-    );
-};
 
 export default OCRProcessingPanel;

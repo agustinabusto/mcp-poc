@@ -102,7 +102,7 @@ const DocumentDetailViewer = ({ document, onBack }) => {
                         <h3 className="text-lg font-medium text-gray-900 mb-4">Datos Extraídos</h3>
 
                         {adaptedDocument.documentType === 'invoice' && (
-                            <InvoiceDataDisplay data={adaptedDocument.extractedData} />
+                            <InvoiceDataDisplay data={adaptedDocument.extractedData?.extractedData || adaptedDocument.extractedData} />
                         )}
 
                         {adaptedDocument.documentType === 'bank_statement' && (
